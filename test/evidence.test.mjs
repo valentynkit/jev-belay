@@ -187,6 +187,33 @@ test("DONE_HINT is loose on the wordings a done claim actually uses", () => {
   assert.equal(DONE_HINT.test("Still looking into the timeout."), false);
 });
 
+// Real transcripts reach tens of MB on a few pasted tool outputs, and this runs on every
+// stop, so only the tail is read. The turn has to survive both sides of that boundary.
+test("a turn at the end of a huge transcript is still read", () => {
+  const filler = "x".repeat(200_000);
+  const steps = [{ prompt: "old task" }];
+  for (let i = 0; i < 30; i++) steps.push({ tool: "Bash", input: { command: "echo hi" }, stdout: filler });
+  steps.push(
+    { prompt: "the real task" },
+    { tool: "Edit", input: { file_path: "/tmp/a.js" } },
+    { text: "Done, all set." },
+  );
+  const e = readEvidence(transcriptFile(steps));
+  assert.equal(e.task, "the real task");
+  assert.equal(e.mutations, 1);
+  assert.equal(needsDoneCheck(e), true);
+});
+
+test("a single turn longer than the tail window falls back to the whole file", () => {
+  const filler = "y".repeat(200_000);
+  const steps = [{ prompt: "one enormous turn" }, { tool: "Edit", input: { file_path: "/tmp/a.js" } }];
+  for (let i = 0; i < 30; i++) steps.push({ tool: "Bash", input: { command: "echo hi" }, stdout: filler });
+  steps.push({ text: "Done." });
+  const e = readEvidence(transcriptFile(steps));
+  assert.equal(e.task, "one enormous turn", "the prompt is outside the tail window");
+  assert.equal(e.mutations, 1);
+});
+
 test("readEvidence picks the last turn of a file", () => {
   const path = transcriptFile([
     { prompt: "first task" },

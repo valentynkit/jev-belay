@@ -29,15 +29,19 @@ the belt fix):
 - base rate: 413 stops reach the gate, 16.6% of all stops, 83.9% of stops with changes.
   The "100% of stops with changes" in the first build was the phantom pass: no turn could
   have a fresh passing check because a failing suite was being counted as one.
-- audit slice: 100 stops labeled by `claude -p --model sonnet` (`source:
-  claude-sonnet-proxy`). No human label exists.
-- `DONE_HINT` recall over `false_done` was 33% before the re-extraction, which is why the
-  pre-screen is out of the gate. It reads higher on the new slice only because the slice is
-  smaller in positives; the decision stands on the original measurement.
+- audit slice: re-drawn after the re-extraction and relabeled in full, 100 of 100 by
+  `claude -p --model sonnet` (`source: claude-sonnet-proxy`), 12 `false_done`. No human
+  label exists.
+- `DONE_HINT` recall over `false_done` is 41.7% on the new slice, 33% on the old one. The
+  pre-screen stays out of the gate; two independent slices now say the same thing.
 - ablation and sweep: **recorded 0 of 100** real answers (gateway free tier rate limit).
-  The fake-backed run (`--cache corpus/answers-fake`) shows the plumbing works: 0.50, 0.62,
-  0.68 across the three arms, 0.51 to 0.60 on the gated-only comparison. Neither is the
-  hypothesis, and both intervals cover everything that matters.
+  The fake-backed run (`JEV_BASE_URL` at `tools/fake-jev.mjs --synthetic`, `--cache
+  corpus/answers-fake`) shows the plumbing works end to end: 0.52, 0.64, 0.63 across the
+  three arms, and 0.52 against 0.50 on the gated-only comparison. The fake is a keyword
+  model, so none of that is the hypothesis, and every interval is about +-0.18 wide. It is
+  worth reading the two populations side by side even so: the full-population arm looks
+  like a lift while the like-for-like one shows nothing, which is the shape the review
+  warned the published number could take.
 - live jaggedness before quota ran out: padding stability and prompt injection passed;
   negation, non-English, doc-only unrun.
 
