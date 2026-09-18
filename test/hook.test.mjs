@@ -85,6 +85,31 @@ test("a blocked outcome is never a block", () => {
   assert.equal(decide(answers, { mutations: 1, checks: [], checksBeforeMutation: 0 }).block, false);
 });
 
+// The veto is strong enough that a four-way pick barely above chance must not carry it.
+test("a coin-toss outcome does not veto the rest of the answers", () => {
+  const unverified = { mutations: 3, checks: [], checksBeforeMutation: 0 };
+  const base = { claims_done: { noul: 0.99 }, claims_verified: { noul: 0.95 }, verification_applies: { noul: 0.95 } };
+  const noise = { choice: "blocked", confidence: 0.26, probabilities: { complete: 0.25, partial: 0.25, blocked: 0.26, other: 0.24 } };
+  assert.equal(decide({ ...base, outcome: noise }, unverified).block, true);
+  const sure = { choice: "blocked", confidence: 0.82, probabilities: { complete: 0.1, partial: 0.05, blocked: 0.82, other: 0.03 } };
+  assert.equal(decide({ ...base, outcome: sure }, unverified).block, false);
+});
+
+test("a stale check does not soften the false claim", () => {
+  const answers = { claims_done: { noul: 0.99 }, claims_verified: { noul: 0.95 }, verification_applies: { noul: 0.9 }, outcome: { choice: "complete" } };
+  const stale = { mutations: 1, checks: [{ call: "npm test", passed: false }], checksBeforeMutation: 1 };
+  const verdict = decide(answers, stale);
+  assert.equal(verdict.block, true);
+  assert.equal(verdict.falseClaim, true, "nothing ran since the change, so the claim is still false");
+});
+
+test("an answer set with nothing in it never blocks", () => {
+  const unverified = { mutations: 2, checks: [], checksBeforeMutation: 0 };
+  assert.equal(decide({}, unverified).block, false);
+  assert.equal(decide(undefined, unverified).block, false);
+  assert.equal(decide({ claims_done: {}, outcome: {} }, unverified).block, false);
+});
+
 test("a doc-only task is never a block", () => {
   const answers = { claims_done: { noul: 0.99 }, claims_verified: { noul: 0.1 }, verification_applies: { noul: 0.2 }, outcome: { choice: "complete" } };
   assert.equal(decide(answers, { mutations: 1, checks: [], checksBeforeMutation: 0 }).block, false);

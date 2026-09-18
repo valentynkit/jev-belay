@@ -9,7 +9,7 @@
 // The transcript never leaves the machine: state is the user's task, the final assistant
 // message, and counts derived from tool calls. No tool inputs, no diffs, no file contents.
 
-import { appendFileSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, closeSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -25,10 +25,17 @@ const REDACTED = "<redacted>";
 const SECRET_RULES = [
   [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, REDACTED],
   [/(authorization\s*[:=]\s*)(?:basic|bearer|token)?\s*\S+/gi, `$1${REDACTED}`],
-  [/\b(bearer\s+)\S+/gi, `$1${REDACTED}`],
-  [/((?:api[_-]?key|apikey|access[_-]?key|secret[_-]?key|client[_-]?secret|private[_-]?key|passw(?:or)?d|passphrase|token|secret|credentials?)[a-z0-9_-]*\s*[=:]\s*["']?)([^\s"'&;]+)/gi, `$1${REDACTED}`],
-  [/\b([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]+:[^\s/@]+@/gi, `$1${REDACTED}@`],
+  // Only a token-shaped word after "bearer": the bare rule ate the next word of any
+  // sentence that used "bearer" in prose, and this text is mostly prose.
+  [/\b(bearer\s+)[\w.-]{16,}/gi, `$1${REDACTED}`],
+  // The optional quote after the keyword is what makes JSON work. Without it the keyword
+  // class stops at the closing quote and the whole shape walks through untouched.
+  [/((?:api[_-]?key|apikey|access[_-]?key|secret[_-]?key|client[_-]?secret|private[_-]?key|passw(?:or)?d|passphrase|token|secret|credentials?)[a-z0-9_-]*["']?\s*[=:]\s*["']?)([^\s"'&;]+)/gi, `$1${REDACTED}`],
+  // The username is optional: redis:// conventionally has none, and the password is still there.
+  [/\b([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]*:[^\s/@]+@/gi, `$1${REDACTED}@`],
   [/\bsk-[A-Za-z0-9_-]{8,}/g, REDACTED],
+  [/\b[sr]k_(?:live|test)_[A-Za-z0-9]{10,}/g, REDACTED],
+  [/\bnpm_[A-Za-z0-9]{30,}/g, REDACTED],
   [/\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}/g, REDACTED],
   [/\bgithub_pat_[A-Za-z0-9_]{20,}/g, REDACTED],
   [/\bAKIA[0-9A-Z]{16}\b/g, REDACTED],
@@ -64,22 +71,45 @@ export function checkSummary(output) {
   if (nodeTest) return Number(nodeTest[1]) > 0 ? "fail" : "pass";
   const jest = /^Tests:\s+(?:(\d+) failed, )?.*?\d+ total/m.exec(tail);
   if (jest) return jest[1] && Number(jest[1]) > 0 ? "fail" : "pass";
-  const pytest = /^=+ .*?(?:(\d+) failed|(\d+) error).*?in [\d.]+s/m.exec(tail) ?? /^=+ (\d+) passed.*? in [\d.]+s =+$/m.exec(tail);
+  // A long run appends the wall clock after the seconds, so the tail is not anchored.
+  const pytest = /^=+ .*?(?:(\d+) failed|(\d+) error).*?in [\d.]+s/m.exec(tail) ?? /^=+ (\d+) passed.*? in [\d.]+s/m.exec(tail);
   if (pytest) return /\d+ (?:failed|error)/.test(pytest[0]) ? "fail" : "pass";
   const cargoOrGo = /^test result: (ok|FAILED)\./m.exec(tail) ?? /^(ok|FAIL)\s+\S+\s+[\d.]+s$/m.exec(tail);
   if (cargoOrGo) return cargoOrGo[1] === "ok" ? "pass" : "fail";
-  if (/\berror TS\d{4}:/.test(tail)) return "fail";
+  // vitest counts on their own line, two spaces in, no colon (that is jest's shape).
+  const vitest = /^\s*Tests\s{2,}([^\n]*\(\d+\))\s*$/m.exec(tail);
+  if (vitest) return /\d+ failed/.test(vitest[1]) ? "fail" : "pass";
+  const bunFail = /^\s*(\d+) fail\s*$/m.exec(tail);
+  if (bunFail && /^\s*\d+ pass\s*$/m.test(tail)) return Number(bunFail[1]) > 0 ? "fail" : "pass";
+  const mix = /^(?:\d+ doctests?, )?\d+ tests?, (\d+) failures?/m.exec(tail);
+  if (mix) return Number(mix[1]) > 0 ? "fail" : "pass";
+  const dotnet = /^(Passed|Failed)!\s+-\s+Failed:\s+\d+/m.exec(tail);
+  if (dotnet) return dotnet[1] === "Passed" ? "pass" : "fail";
+  const build = /^(?:\[INFO\] )?BUILD (SUCCESSFUL|SUCCESS|FAILED|FAILURE)/m.exec(tail);
+  if (build) return build[1].startsWith("SUCCESS") ? "pass" : "fail";
+  // eslint exits 0 on warnings alone, so the error count is the verdict, not the problem count.
+  const eslint = /^[✖x] \d+ problems? \((\d+) errors?/m.exec(tail);
+  if (eslint) return Number(eslint[1]) > 0 ? "fail" : "pass";
+  if (/\berror TS\d{4,}:/.test(tail)) return "fail";
   return undefined;
 }
 
 const MUTATING_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
 
-/** What a finished tool call contributes: a change, a check, or nothing either way. */
+/**
+ * What a finished tool call contributes: a change, a check, or nothing either way.
+ *
+ * Both belts speak before the verdict. The host flags a Bash result as an error for a
+ * shell-level failure (no such command, permission denied) and not for a runner exiting
+ * nonzero, which it records with no error flag and no exit code at all. Answering on belt 1
+ * alone therefore reads a red suite as a pass, which is the one mistake that makes the whole
+ * hook a no-op.
+ */
 export function classifyToolResult(tool, input = {}, failed = false, output = "") {
   if (MUTATING_TOOLS.has(tool)) return "mutation";
   const command = typeof input.command === "string" ? input.command : "";
-  if (tool === "Bash" && CHECK_COMMAND.test(command)) return failed ? "check-fail" : "check-pass";
   const summary = checkSummary(output);
+  if (tool === "Bash" && CHECK_COMMAND.test(command)) return failed || summary === "fail" ? "check-fail" : "check-pass";
   if (summary) return summary === "fail" || failed ? "check-fail" : "check-pass";
   return "unknown";
 }
@@ -93,9 +123,15 @@ function textOf(content) {
   return content.filter((b) => b && b.type === "text" && typeof b.text === "string").map((b) => b.text).join("\n");
 }
 
+// A slash command and its output are logged as ordinary user lines, each with its own
+// promptId, distinguishable only by the wrapper tag in the body. Treating one as a new
+// prompt would split the turn and throw away the evidence collected before it.
+const COMMAND_LINE = /^<(?:command-name|command-message|command-args|local-command-stdout|local-command-stderr)>/;
+
 function isUserPrompt(line) {
-  return line.type === "user" && !line.toolUseResult && !line.isMeta && !line.isSidechain
-    && textOf(line.message?.content).trim() !== "";
+  if (line.type !== "user" || line.toolUseResult || line.isMeta || line.isSidechain) return false;
+  const text = textOf(line.message?.content).trim();
+  return text !== "" && !COMMAND_LINE.test(text);
 }
 
 /** Parse a jsonl transcript into records, skipping anything unparseable. */
@@ -113,7 +149,7 @@ export function parseJsonl(text) {
  * questions read. `checksBeforeMutation` marks where the fresh checks start: only the
  * checks that ran after the latest change say anything about the code as it stands.
  */
-export function evidenceFromTurn(lines) {
+export function evidenceFromTurn(lines, home = homedir()) {
   const evidence = { mutations: 0, checks: [], checksBeforeMutation: 0 };
   const pending = new Map();
   let finalMessage = "";
@@ -140,7 +176,7 @@ export function evidenceFromTurn(lines) {
         evidence.checksBeforeMutation = evidence.checks.length;
       } else if (outcome === "check-pass" || outcome === "check-fail") {
         const command = typeof call.input?.command === "string" ? call.input.command : call.name || "check";
-        evidence.checks.push({ call: redact(command.slice(0, 200)), passed: outcome === "check-pass" });
+        evidence.checks.push({ call: redact(command, home).slice(0, 200), passed: outcome === "check-pass" });
       }
     }
   }
@@ -152,7 +188,7 @@ export function freshChecks(evidence) {
 }
 
 /** Every turn in a transcript, as {task, finalMessage, mutations, checks, ...}. */
-export function turnsOf(records) {
+export function turnsOf(records, home = homedir()) {
   const turns = [];
   let current = null;
   for (const line of records) {
@@ -164,15 +200,44 @@ export function turnsOf(records) {
     if (current) current.lines.push(line);
   }
   if (current) turns.push(current);
-  return turns.map((t) => ({ task: t.task, promptId: t.promptId, ...evidenceFromTurn(t.lines) }));
+  return turns.map((t) => ({ task: t.task, promptId: t.promptId, ...evidenceFromTurn(t.lines, home) }));
+}
+
+// A transcript grows without bound and a few pasted tool outputs can make it tens of MB,
+// all of which this would otherwise read and parse on every single stop, including the four
+// out of five that never reach a question. Only the last turn is ever used, so read the
+// tail and fall back to the whole file when no prompt is in it.
+const TAIL_BYTES = 4 * 1024 * 1024;
+
+function readTail(path) {
+  const size = statSync(path).size;
+  if (size <= TAIL_BYTES) return { text: readFileSync(path, "utf8"), whole: true };
+  const fd = openSync(path, "r");
+  try {
+    const buf = Buffer.alloc(TAIL_BYTES);
+    readSync(fd, buf, 0, TAIL_BYTES, size - TAIL_BYTES);
+    const text = buf.toString("utf8");
+    return { text: text.slice(text.indexOf("\n") + 1), whole: false }; // the first line is cut in half
+  } finally { closeSync(fd); }
+}
+
+/**
+ * The transcript's own home, so a hook running under a different $HOME still rewrites the
+ * paths in the text it sends. Claude Code stores transcripts at <home>/.claude/projects/.
+ */
+export function homeOf(transcriptPath, fallback = homedir()) {
+  return /^(.*)\/\.claude\/projects\//.exec(String(transcriptPath || ""))?.[1] || fallback;
 }
 
 /** The last turn of a transcript file, which is the turn a Stop hook fires on. */
 export function readEvidence(transcriptPath) {
-  const records = parseJsonl(readFileSync(transcriptPath, "utf8"));
-  const turns = turnsOf(records);
+  const home = homeOf(transcriptPath);
+  const { text, whole } = readTail(transcriptPath);
+  let records = parseJsonl(text);
+  if (!whole && !records.some(isUserPrompt)) records = parseJsonl(readFileSync(transcriptPath, "utf8"));
+  const turns = turnsOf(records, home);
   const last = turns.at(-1) || { task: "", finalMessage: "", mutations: 0, checks: [], checksBeforeMutation: 0 };
-  return { ...last, lineCount: records.length };
+  return { ...last, home, lineCount: records.length };
 }
 
 // ---------------------------------------------------------------------------
@@ -248,9 +313,10 @@ function capTail(text, limit) {
 }
 
 export function buildState(task, finalMessage, evidence) {
+  const home = evidence?.home || homedir();
   return {
-    task: capHead(redact(task), TASK_CAP) || "(no user request recorded in this session)",
-    final_message: capTail(redact(finalMessage), MESSAGE_CAP),
+    task: capHead(redact(task, home), TASK_CAP) || "(no user request recorded in this session)",
+    final_message: capTail(redact(finalMessage, home), MESSAGE_CAP),
     run: {
       file_changes: evidence.mutations,
       checks_run: freshChecks(evidence).map((c) => `${c.call} -> ${c.passed ? "passed" : "failed"}`),
@@ -317,18 +383,25 @@ function sleep(ms, signal) {
 
 export const DEFAULT_THRESHOLD = 0.75;
 const APPLIES_THRESHOLD = 0.5;
+// A four-way choice picked at 0.26 is a coin toss, and the `blocked` pick vetoes everything
+// else. Only a pick that beat the field by some margin gets that power.
+const OUTCOME_FLOOR = 0.4;
 
 export function decide(answers, evidence, { threshold = DEFAULT_THRESHOLD } = {}) {
   const claimsDone = answers?.claims_done?.noul ?? 0;
   const claimsVerified = answers?.claims_verified?.noul ?? 0;
   const applies = answers?.verification_applies?.noul ?? 0;
-  const outcome = answers?.outcome?.choice ?? "other";
+  const pick = answers?.outcome ?? {};
+  const pickConfidence = pick.confidence ?? pick.probabilities?.[pick.choice] ?? 1;
+  const outcome = pickConfidence >= OUTCOME_FLOOR ? pick.choice ?? "other" : "other";
   // Hard veto: a turn whose latest change survived a passing check can never block,
   // whatever Jev says. Dead in the live pipeline (the gate filters those turns out
   // first) and alive as an invariant, which is why it has its own test.
   const verified = freshChecks(evidence).some((c) => c.passed);
   const unverified = !verified && claimsDone >= threshold && outcome !== "blocked" && applies >= APPLIES_THRESHOLD;
-  const falseClaim = unverified && claimsVerified >= 0.7 && evidence.checks.length === 0;
+  // No check since the last change is what makes the claim false, so read the fresh ones:
+  // a suite that ran before the edit does not make "tests pass" true either.
+  const falseClaim = unverified && claimsVerified >= 0.7 && freshChecks(evidence).length === 0;
   const reasons = [];
   if (unverified) {
     const failed = freshChecks(evidence).filter((c) => !c.passed);
@@ -364,11 +437,35 @@ function readSession(sessionId) {
   try { return JSON.parse(readFileSync(sessionFile(sessionId), "utf8")); } catch { return { blocks: 0, lastBlockAt: 0, keys: [] }; }
 }
 
+// Write through a temp file: a half-written session file parses as garbage, and garbage
+// reads as a fresh session, which resets the block counter and hands back the blocks the
+// caps just took away. Rename is atomic, so a reader sees one version or the other.
 function writeSession(sessionId, state) {
   try {
     mkdirSync(join(BELAY_HOME, "sessions"), { recursive: true });
-    writeFileSync(sessionFile(sessionId), JSON.stringify(state));
+    const path = sessionFile(sessionId);
+    const temp = `${path}.${process.pid}.tmp`;
+    writeFileSync(temp, JSON.stringify(state));
+    renameSync(temp, path);
   } catch { /* an unwritable state dir costs dedup, not correctness */ }
+}
+
+/**
+ * Count a block against the session, reading the counter again first so two hooks racing
+ * on the same session do not both increment from the same stale zero.
+ *
+ * ponytail: a re-read narrows the window, it does not close it. The host caps consecutive
+ * Stop blocks at 8 by itself (CLAUDE_CODE_STOP_HOOK_BLOCK_CAP), so the worst a lost
+ * increment costs is a few extra retries inside a bounded window. A lock file goes here if
+ * that ever stops being true.
+ */
+function recordBlock(sessionId, key) {
+  const now = readSession(sessionId);
+  writeSession(sessionId, {
+    blocks: (now.blocks || 0) + 1,
+    lastBlockAt: Date.now(),
+    keys: [...(now.keys || []), key].slice(-20),
+  });
 }
 
 /** stop_hook_active is an optimisation, not the guard: it is missing on some versions. */
@@ -396,13 +493,20 @@ export function logDecision(record, env = process.env) {
 // ---------------------------------------------------------------------------
 // The hook itself.
 
+// A stdin that never closes is not an error, so no catch would ever see it: the hook just
+// sits there until the host kills it at 25 s, having printed nothing. Give up first.
+const STDIN_TIMEOUT_MS = 10_000;
+
 function readStdin() {
   return new Promise((resolve) => {
     let data = "";
+    const done = (value) => { clearTimeout(timer); resolve(value); };
+    const timer = setTimeout(() => done(""), STDIN_TIMEOUT_MS);
+    timer.unref?.();
     process.stdin.setEncoding("utf8");
     process.stdin.on("data", (c) => { data += c; });
-    process.stdin.on("end", () => resolve(data));
-    process.stdin.on("error", () => resolve(""));
+    process.stdin.on("end", () => done(data));
+    process.stdin.on("error", () => done(""));
   });
 }
 
@@ -446,18 +550,16 @@ export async function runHook({ env = process.env, stdin, fetchImpl = fetch } = 
   }, env);
 
   if (!verdict.block) return { exit: 0, why: "allowed" };
-  writeSession(payload.session_id, {
-    blocks: (session.blocks || 0) + 1,
-    lastBlockAt: Date.now(),
-    keys: [...(session.keys || []), key].slice(-20),
-  });
+  recordBlock(payload.session_id, key);
   return { exit: 2, why: "blocked", reason };
 }
 
 // ---------------------------------------------------------------------------
 // watch: the live view. Tails the decision log and draws each decision as it lands.
 
-const COLOR = !process.env.NO_COLOR && process.stdout.isTTY !== false;
+// isTTY is undefined on a pipe, so the old `!== false` test painted escape codes into
+// every redirect and CI log. A terminal is the only place colour belongs.
+const COLOR = !process.env.NO_COLOR && process.stdout.isTTY === true;
 const c = (code, s) => (COLOR ? `[${code}m${s}[0m` : s);
 const green = (s) => c("32", s);
 const red = (s) => c("31", s);
@@ -483,6 +585,7 @@ function paint(name, p, passedFresh) {
 }
 
 export function renderDecision(d, width = COLS()) {
+  width = Math.max(40, Math.floor(width) || 80);
   const barWidth = Math.max(12, width - 34);
   const out = [];
   out.push(dim("─".repeat(width)));
@@ -513,13 +616,17 @@ export function renderDecision(d, width = COLS()) {
   return out.join("\n");
 }
 
+// A negative slice index reads from the end and returns nearly the whole string, so the
+// width floors here are what keep truncation from becoming expansion.
 const oneLine = (s, n) => {
   const t = String(s || "").replace(/\s+/g, " ").trim();
-  return t.length > n ? `${t.slice(0, n - 1)}…` : t;
+  const limit = Math.max(4, n);
+  return t.length > limit ? `${t.slice(0, limit - 1)}…` : t;
 };
 const tail = (s, n) => {
   const t = String(s || "").replace(/\s+/g, " ").trim();
-  return t.length > n ? `…${t.slice(-n)}` : t;
+  const limit = Math.max(4, n);
+  return t.length > limit ? `…${t.slice(-limit)}` : t;
 };
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -540,18 +647,31 @@ async function watch(argv) {
   try { offset = statSync(path).size; } catch {
     console.log(dim("no decision log yet. Set JEV_BELAY_LOG=1 in the environment Claude Code runs in, then end a turn."));
   }
+  // Byte offsets throughout. Slicing a decoded string by a byte count desynchronises on the
+  // first multibyte character in the log and then drops every decision after it.
   for (;;) {
     let size = offset;
     try { size = statSync(path).size; } catch { await wait(400); continue; }
     if (size < offset) offset = 0; // rotated
     if (size > offset) {
-      const fd = readFileSync(path, "utf8");
-      const fresh = fd.slice(offset);
-      offset = Buffer.byteLength(fd);
-      for (const line of parseJsonl(fresh)) console.log(renderDecision(line));
+      const fresh = readRange(path, offset, size - offset);
+      const end = fresh.lastIndexOf("\n"); // leave a half-written line for the next pass
+      if (end >= 0) {
+        offset += Buffer.byteLength(fresh.slice(0, end + 1));
+        for (const line of parseJsonl(fresh.slice(0, end + 1))) console.log(renderDecision(line));
+      }
     }
     await wait(300);
   }
+}
+
+function readRange(path, position, length) {
+  const fd = openSync(path, "r");
+  try {
+    const buf = Buffer.alloc(length);
+    const read = readSync(fd, buf, 0, length, position);
+    return buf.subarray(0, read).toString("utf8");
+  } finally { closeSync(fd); }
 }
 
 // ---------------------------------------------------------------------------
@@ -569,8 +689,9 @@ async function main(argv) {
     process.stderr.write(`jev-belay internal error: ${String(err?.message).slice(0, 200)}\n`);
     process.exit(0);
   }
+  // Exit 2 is the stderr channel: Claude Code shows stderr to the model and continues. The
+  // JSON `decision` form is the exit-0 encoding of the same thing, not a companion to this.
   if (result.exit === 2) {
-    process.stdout.write(`${JSON.stringify({ decision: "block", reason: result.reason })}\n`);
     process.stderr.write(`${result.reason}\n`);
     process.exit(2);
   }
@@ -578,6 +699,15 @@ async function main(argv) {
   process.exit(0);
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] || "").href) {
+// Node resolves import.meta.url through symlinks and argv[1] arrives as written, so
+// comparing them raw makes the hook a silent no-op whenever the path it was invoked by
+// crosses a link (a plugin cache under /tmp on macOS, a symlinked home in a container).
+function isEntryPoint() {
+  const argv1 = process.argv[1];
+  if (!argv1) return false;
+  try { return import.meta.url === pathToFileURL(realpathSync(argv1)).href; } catch { return false; }
+}
+
+if (isEntryPoint()) {
   main(process.argv.slice(2));
 }

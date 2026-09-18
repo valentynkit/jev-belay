@@ -1,7 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DONE_HINT, checkSummary, evidenceFromTurn, freshChecks, needsDoneCheck, readEvidence } from "../belay.mjs";
-import { CARGO_FAIL, CARGO_PASS, GO_PASS, JEST_FAIL, JEST_PASS, PYTEST_FAIL, PYTEST_PASS, TSC_FAIL, transcript, transcriptFile } from "./fixtures.mjs";
+import {
+  BUN_FAIL, BUN_PASS, CARGO_FAIL, CARGO_PASS, DOTNET_FAIL, DOTNET_PASS, ESLINT_FAIL, ESLINT_WARN_ONLY,
+  GO_PASS, GRADLE_FAIL, GRADLE_PASS, JEST_FAIL, JEST_PASS, MAVEN_PASS, MIX_FAIL, MIX_PASS,
+  PYTEST_FAIL, PYTEST_PASS, PYTEST_PASS_LONG, TSC_FAIL, TSC_FAIL_5DIGIT, VITEST_FAIL, VITEST_PASS,
+  transcript, transcriptFile,
+} from "./fixtures.mjs";
 
 const turn = (steps) => evidenceFromTurn(transcript(steps).slice(1));
 
@@ -15,6 +20,33 @@ test("belt 2 reads each runner's own summary", () => {
   assert.equal(checkSummary(GO_PASS), "pass");
   assert.equal(checkSummary(TSC_FAIL), "fail");
   assert.equal(checkSummary("hello world"), undefined);
+});
+
+test("belt 2 reads the runners belt 1 names but the first cut skipped", () => {
+  assert.equal(checkSummary(VITEST_PASS), "pass");
+  assert.equal(checkSummary(VITEST_FAIL), "fail");
+  assert.equal(checkSummary(BUN_PASS), "pass");
+  assert.equal(checkSummary(BUN_FAIL), "fail");
+  assert.equal(checkSummary(MIX_PASS), "pass");
+  assert.equal(checkSummary(MIX_FAIL), "fail");
+  assert.equal(checkSummary(DOTNET_PASS), "pass");
+  assert.equal(checkSummary(DOTNET_FAIL), "fail");
+  assert.equal(checkSummary(GRADLE_PASS), "pass");
+  assert.equal(checkSummary(GRADLE_FAIL), "fail");
+  assert.equal(checkSummary(MAVEN_PASS), "pass");
+  assert.equal(checkSummary(ESLINT_FAIL), "fail");
+  assert.equal(checkSummary(ESLINT_WARN_ONLY), "pass");
+  assert.equal(checkSummary(PYTEST_PASS_LONG), "pass");
+  assert.equal(checkSummary(TSC_FAIL_5DIGIT), "fail");
+});
+
+test("prose that mentions a runner is not a summary", () => {
+  for (const s of [
+    "I will run the tests next.",
+    "5 tests are still missing coverage",
+    "the build failed last week, per the issue",
+    "Tests: see the plan above",
+  ]) assert.equal(checkSummary(s), undefined, s);
 });
 
 test("belt 1 catches the runner in the command text", () => {
@@ -47,6 +79,60 @@ test("a failing suite is not verification", () => {
     { text: "Done, everything works." },
   ]);
   assert.equal(freshChecks(e)[0].passed, false);
+  assert.equal(needsDoneCheck(e), true);
+});
+
+// The shape that matters most: Claude Code records a test runner's nonzero exit with no
+// is_error and no exit code anywhere in the line. Only the runner's own summary says it
+// failed, so belt 1 must not answer before belt 2 has read the output.
+test("a failing suite that the host never flagged is still not verification", () => {
+  const e = turn([
+    { prompt: "fix the parser" },
+    { tool: "Edit", input: { file_path: "/tmp/a.js" } },
+    { tool: "Bash", input: { command: "npm test" }, stdout: JEST_FAIL },
+    { text: "Done, everything works." },
+  ]);
+  assert.equal(freshChecks(e)[0].passed, false);
+  assert.equal(needsDoneCheck(e), true);
+});
+
+test("an unflagged failure is caught for every runner belt 1 names", () => {
+  for (const stdout of [JEST_FAIL, PYTEST_FAIL, CARGO_FAIL, VITEST_FAIL, BUN_FAIL, MIX_FAIL, DOTNET_FAIL, GRADLE_FAIL]) {
+    const e = turn([
+      { prompt: "fix it" },
+      { tool: "Edit", input: { file_path: "/tmp/a.js" } },
+      { tool: "Bash", input: { command: "npm test" }, stdout },
+      { text: "Done." },
+    ]);
+    assert.equal(freshChecks(e)[0].passed, false, stdout.slice(0, 40));
+    assert.equal(needsDoneCheck(e), true, stdout.slice(0, 40));
+  }
+});
+
+test("a slash command mid-turn does not start a new turn", () => {
+  const path = transcriptFile([
+    { prompt: "add a retry" },
+    { tool: "Edit", input: { file_path: "/tmp/a.js" } },
+    { slash: "/model opus", stdout: "Set model to opus" },
+    { tool: "Edit", input: { file_path: "/tmp/b.js" } },
+    { text: "Done, both files updated." },
+  ]);
+  const e = readEvidence(path);
+  assert.equal(e.task, "add a retry");
+  assert.equal(e.mutations, 2);
+  assert.equal(needsDoneCheck(e), true);
+});
+
+test("a check between two changes is stale for the later one", () => {
+  const e = turn([
+    { prompt: "two edits" },
+    { tool: "Write", input: { file_path: "/tmp/a.rs" } },
+    { tool: "Bash", input: { command: "cargo test" }, stdout: CARGO_PASS },
+    { tool: "Write", input: { file_path: "/tmp/b.rs" } },
+    { text: "Done." },
+  ]);
+  assert.equal(e.checks.length, 1);
+  assert.deepEqual(freshChecks(e), []);
   assert.equal(needsDoneCheck(e), true);
 });
 
