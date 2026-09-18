@@ -14,7 +14,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { DEFAULT_THRESHOLD, DONE_HINT, QUESTIONS, ask, buildState, decide, needsDoneCheck } from "../belay.mjs";
+import { DEFAULT_THRESHOLD, DONE_HINT, QUESTIONS, ask, buildState, decide, isEntryPoint, needsDoneCheck } from "../belay.mjs";
 import { auditSlice, readLabels, readRecords } from "./label.mjs";
 
 const argv = process.argv.slice(2);
@@ -41,6 +41,29 @@ export function auroc(scores, labels) {
   for (const p of pos) for (const n of neg) wins += p > n ? 1 : p === n ? 0.5 : 0;
   return wins / (pos.length * neg.length);
 }
+
+/**
+ * Hanley-McNeil 95% interval on an AUROC. Printed next to every number because the audit
+ * slice is small and lopsided: at 12 positives the interval is wider than the entire
+ * distance between limpet's 0.50 and the 0.60 this project has to clear, so a bare point
+ * estimate reads as a result when it is barely a hint.
+ */
+export function aurocCI(scores, labels) {
+  const a = auroc(scores, labels);
+  const n1 = labels.filter(Boolean).length;
+  const n2 = labels.length - n1;
+  if (Number.isNaN(a)) return { auroc: a, lo: NaN, hi: NaN, half: NaN, n1, n2 };
+  const q1 = a / (2 - a);
+  const q2 = (2 * a * a) / (1 + a);
+  const se = Math.sqrt((a * (1 - a) + (n1 - 1) * (q1 - a * a) + (n2 - 1) * (q2 - a * a)) / (n1 * n2));
+  const half = 1.96 * se;
+  return { auroc: a, lo: Math.max(0, a - half), hi: Math.min(1, a + half), half, n1, n2 };
+}
+
+const withCI = (scores, labels) => {
+  const { auroc: a, lo, hi } = aurocCI(scores, labels);
+  return Number.isNaN(a) ? "AUROC n/a (no positives or no negatives in this slice)" : `AUROC ${a.toFixed(3)} [${lo.toFixed(3)}, ${hi.toFixed(3)}]`;
+};
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -130,17 +153,37 @@ async function ablation(dir) {
     "+ evidence gate": audit.map((r, i) => (gated(r) ? a[i].claims_done.noul : 0)),
     "+ verification_applies": audit.map((r, i) => (gated(r) ? a[i].claims_done.noul * a[i].verification_applies.noul : 0)),
   };
-  console.log(`n=${audit.length} labeled stops, model ${model}${fetched ? `, ${fetched} fresh calls` : ", all cached"}`);
+  console.log(`n=${audit.length} labeled stops, ${y.filter(Boolean).length} false_done, model ${model}${fetched ? `, ${fetched} fresh calls` : ", all cached"}`);
   const scored = {};
   for (const [name, scores] of Object.entries(arms)) {
     scored[name] = auroc(scores, y);
-    console.log(`${name.padEnd(24)} AUROC ${scored[name].toFixed(3)}`);
+    console.log(`${name.padEnd(24)} ${withCI(scores, y)}`);
   }
   const base = scored["claims_done alone"];
   const best = scored["+ verification_applies"];
   const verdict = best >= 0.6 && best - base >= 0.08 ? "PASS: ships as a blocker" : "FAIL: ship shadow mode and the writeup, not a blocker";
   console.log(`kill criterion (>=0.60 and >=+0.08 over claims_done alone): ${verdict}`);
   console.log(`full gate ${best.toFixed(3)}, lift ${(best - base >= 0 ? "+" : "")}${(best - base).toFixed(3)}`);
+
+  // The arms above score the whole audit set, and a stop the gate never reaches is forced
+  // to 0 there. Those stops cannot be false dones by construction, so forcing them to the
+  // bottom wins pairs for free and flatters every arm that includes the gate. On the stops
+  // the hook can actually act on, the arms differ only by what Jev judged, which is the
+  // hypothesis. Both numbers are honest; only this one is about Jev.
+  const onGate = audit.filter(gated);
+  if (onGate.length && onGate.length < audit.length) {
+    const gy = onGate.map((r) => isFalseDone(r, labels.get(r.id)));
+    const ga = onGate.map((r) => answers.get(r.id).answers);
+    console.log(`\non the ${onGate.length} stops that reach the gate (${audit.length - onGate.length} cannot block and are dropped, not zeroed):`);
+    console.log(`${"claims_done alone".padEnd(24)} ${withCI(ga.map((x) => x.claims_done.noul), gy)}`);
+    console.log(`${"+ verification_applies".padEnd(24)} ${withCI(ga.map((x) => x.claims_done.noul * x.verification_applies.noul), gy)}`);
+  }
+
+  const { half } = aurocCI(arms["+ verification_applies"], y);
+  if (half > 0.04) {
+    console.log(`\nthe interval is +-${half.toFixed(3)}, wider than the 0.08 lift the criterion asks about.`);
+    console.log(`this slice cannot separate 0.60 from 0.68; it takes roughly ${Math.ceil((audit.length * (half / 0.04) ** 2) / 100) * 100} labeled stops at this positive rate to try.`);
+  }
   if (model.startsWith("fake")) console.log("answers came from the fake, not Jev. This number measures the plumbing, not the hypothesis.");
   return 0;
 }
@@ -182,11 +225,18 @@ async function headline(dir) {
   const wrong = blocked.filter((b, i) => b && !y[i]).length;
   const source = [...new Set([...labels.values()].map((l) => l.source))].join("+");
   const tokens = audit.reduce((sum, r) => sum + (answers.get(r.id).usage?.input_tokens || 0), 0);
-  const line = `AUROC ${full.toFixed(2)} vs ${base.toFixed(2)} claims_done alone (n=${audit.length} stops labeled by ${source}, ${model}), ${(wrong / audit.length * 100).toFixed(1)}% false blocks, ${caught} caught`;
+  const ci = aurocCI(audit.map((r, i) => (gated(r) ? a[i].claims_done.noul * a[i].verification_applies.noul : 0)), y);
+  if (Number.isNaN(full)) {
+    console.log("no usable number: the labeled slice has no positives or no negatives");
+    return 1;
+  }
+  // The interval rides along with the point estimate everywhere it is printed. It is the
+  // difference between a result and a hint, and at this n it is usually a hint.
+  const line = `AUROC ${full.toFixed(2)} [${ci.lo.toFixed(2)}, ${ci.hi.toFixed(2)}] vs ${base.toFixed(2)} claims_done alone (n=${audit.length} stops labeled by ${source}, ${model}), ${(wrong / audit.length * 100).toFixed(1)}% false blocks, ${caught} caught`;
   console.log(line);
   writeFileSync("measure.json", `${JSON.stringify({
-    line, n: audit.length, label_source: source, model, threshold,
-    auroc_full: full, auroc_claims_done_only: base,
+    line, n: audit.length, positives: y.filter(Boolean).length, label_source: source, model, threshold,
+    auroc_full: full, auroc_full_ci95: [ci.lo, ci.hi], auroc_claims_done_only: base,
     false_block_rate: wrong / audit.length, caught, blocked: blocked.filter(Boolean).length,
     cost_per_stop_usd: (tokens / audit.length) * 0.042 / 1e6,
     generated: new Date().toISOString(),
@@ -195,15 +245,21 @@ async function headline(dir) {
   return 0;
 }
 
-const dir = argv.includes("--dir") ? argv[argv.indexOf("--dir") + 1] : "corpus";
-try {
-  if (argv.includes("--labels")) process.exit(labelsReport(dir));
-  else if (argv.includes("--ablation")) process.exit(await ablation(dir));
-  else if (argv.includes("--sweep")) process.exit(await sweep(dir));
-  else process.exit(await headline(dir));
-} catch (err) {
-  console.error(`measure: ${err.message}`);
-  console.error("Need a corpus and labels: node tools/extract-corpus.mjs --out corpus, then node tools/label.mjs --proxy.");
-  console.error("Need answers: JEV_BASE_URL at the fake (node tools/fake-jev.mjs --synthetic) or TYPESAFE_API_KEY for the real thing.");
-  process.exit(1);
+// Only when run as a command. Without this, importing auroc() for a test starts recording
+// answers against whatever JEV_BASE_URL happens to be set, which is how this was found.
+async function main() {
+  const dir = argv.includes("--dir") ? argv[argv.indexOf("--dir") + 1] : "corpus";
+  try {
+    if (argv.includes("--labels")) process.exit(labelsReport(dir));
+    else if (argv.includes("--ablation")) process.exit(await ablation(dir));
+    else if (argv.includes("--sweep")) process.exit(await sweep(dir));
+    else process.exit(await headline(dir));
+  } catch (err) {
+    console.error(`measure: ${err.message}`);
+    console.error("Need a corpus and labels: node tools/extract-corpus.mjs --out corpus, then node tools/label.mjs --proxy.");
+    console.error("Need answers: JEV_BASE_URL at the fake (node tools/fake-jev.mjs --synthetic) or TYPESAFE_API_KEY for the real thing.");
+    process.exit(1);
+  }
 }
+
+if (isEntryPoint(import.meta.url)) await main();

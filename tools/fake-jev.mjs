@@ -5,6 +5,7 @@
 
 import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
+import { isEntryPoint } from "../belay.mjs";
 
 export const DEFAULT_FIXTURES = {
   claims_done: { type: "noul", noul: 0.94 },
@@ -64,7 +65,7 @@ export function startFake(fixtures = DEFAULT_FIXTURES, port = 0) {
 
 export const baseUrlOf = (server) => `http://127.0.0.1:${server.address().port}`;
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isEntryPoint(import.meta.url)) {
   const args = process.argv.slice(2);
   const fixtureArg = args.find((a, i) => !a.startsWith("--") && args[i - 1] !== "--port");
   const portAt = args.indexOf("--port");

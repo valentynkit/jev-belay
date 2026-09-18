@@ -12,7 +12,7 @@ import { createHash } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, writeFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { DONE_HINT, buildState, freshChecks, needsDoneCheck, parseJsonl, turnsOf } from "../belay.mjs";
+import { DONE_HINT, buildState, freshChecks, isEntryPoint, needsDoneCheck, parseJsonl, turnsOf } from "../belay.mjs";
 
 const OPT_OUT = "jev-belay:no-corpus";
 
@@ -78,4 +78,4 @@ function main(argv) {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main(process.argv.slice(2));
+if (isEntryPoint(import.meta.url)) main(process.argv.slice(2));
