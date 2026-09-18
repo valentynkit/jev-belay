@@ -1,0 +1,11 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "node ${CLAUDE_PLUGIN_ROOT}/belay.mjs", "timeout": 25 }
+        ]
+      }
+    ]
+  }
+}

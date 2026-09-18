@@ -1,0 +1,8 @@
+# The root .gitignore excludes corpus/ everywhere; re-include the directory so the
+# two tracked pieces below survive, then exclude everything extracted into it.
+!corpus/
+corpus/*
+!corpus/RUBRIC.md
+!corpus/synthetic/
+measure.json
+corpus/synthetic/answers/

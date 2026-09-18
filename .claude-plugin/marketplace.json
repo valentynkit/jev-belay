@@ -1,0 +1,7 @@
+{
+  "name": "jev-belay",
+  "owner": { "name": "valentynkit" },
+  "plugins": [
+    { "name": "jev-belay", "source": "./", "description": "Blocks \"done, tests pass\" when nothing ran" }
+  ]
+}

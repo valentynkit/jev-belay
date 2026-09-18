@@ -1,0 +1,10 @@
+{
+  "name": "jev-belay",
+  "description": "Stop hook that blocks an unverified done: reads the turn's evidence, then asks Jev once",
+  "version": "0.1.0",
+  "author": {
+    "name": "valentynkit"
+  },
+  "homepage": "https://github.com/valentynkit/jev-belay",
+  "license": "MIT"
+}

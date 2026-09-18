@@ -130,15 +130,18 @@ Questions, one request, wording and true/false criteria near-verbatim from pi-wa
 mutations   = Write/Edit/NotebookEdit tool_use blocks
 freshChecks = belt results at or after the first mutation     // [{call, passed}]
 passedFresh = freshChecks.some(c => c.passed)
-doneish     = DONE_HINT.test(final_message.slice(-600))       // recall-biased pre-screen
 
-needsDoneCheck = mutations > 0 && !passedFresh && doneish
+needsDoneCheck = mutations > 0 && !passedFresh
   false -> skip: exit 0, no Jev call     true -> ask: one request, four questions
 ```
 
-`DONE_HINT` is deliberately loose (done, fixed, implemented, complete, working, passing, ready).
-A cost filter, never a blocker: task 4 reports the share of labeled `false_done` records it
-would have dropped, and that number must be 0 or the pattern widens.
+**The `DONE_HINT` pre-screen was cut after task 4 measured it, 2026-09-18.** It was specified
+as a free cost filter that had to drop zero labeled `false_done` records or widen. Measured
+over the audit slice it kept 33% of them: "presents the requested work as finished" is a
+judgment, and the misses are messages that summarise a result without any of the words. No
+widening of a word list fixes that. The filter saved $0.000017 per stop and cost two thirds
+of the catches, so the gate is now the evidence alone and `DONE_HINT` survives as the
+diagnostic `measure --labels` prints. Base rate rose from 5.3% to 18.2% of stops.
 
 **The decision** reads the evidence rather than trusting Jev alone:
 
@@ -149,6 +152,9 @@ unverified = !verified && claims_done >= 0.75 && outcome != "blocked"
 falseClaim = unverified && claims_verified >= 0.7 && evidence.checks.length === 0
 block      = unverified          (falseClaim only changes the wording)
 ```
+
+State truncation keeps the **tail** of `final_message`, not the head: the completion claim
+lives in the last paragraph. `task` keeps its head.
 
 `verified` is an invariant with its own test: a turn with a fresh passing check can never
 block, whatever Jev answers. 0.75 is a starting point, swept in task 7; 0.30 to 0.70 on
@@ -162,7 +168,9 @@ caps; **negation**, hence explicit true and false criteria. We never assert
 
 ## 5. Testing and the corpus
 
-**The corpus never leaves the machine.** `corpus/` is gitignored, and
+**The corpus never leaves the machine.** The repo also ships eight hand-authored stops in
+`corpus/synthetic/`, so a stranger can run `measure --dir corpus/synthetic` end to end without
+a transcript of their own. `corpus/` is gitignored, and
 `tools/extract-corpus.mjs` stores no transcript slices: it runs the evidence pass at extraction
 time and writes a **projection of only the fields the questions read**, so tool inputs, file
 contents, diffs, and paths never hit disk. On top of that: `$HOME` to `~`, secret-shaped
@@ -176,15 +184,27 @@ Source shape, verified: `~/.claude/projects/*/*.jsonl` is flat jsonl; assistant 
 `toolUseResult` (`{stdout, stderr, interrupted}`). A stop point is the last assistant line with
 text and no `tool_use` before the next new `promptId`.
 
-**Labeling, decided.** `false_done` is a conjunction and only one half needs a human. The
-verification half is **auto-labeled from the check-runner belt**, a deterministic fact read out
-of the transcript rather than a model's opinion, and exactly the variable limpet had no access
-to. The claim half is auto-labeled by `DONE_HINT` across the corpus and **hand-labeled on a
-100-stop random slice** that becomes the audit set. Half an hour of work, buying the headline
-AUROC on hand labels, the auto-labeler's agreement rate published beside it, and the pre-screen
-recall check. Rubric and tie-breaks go in `corpus/RUBRIC.md`, written in task 4 before any
-number is computed. Better grounded than limpet, where both halves come from a model and the
-author calls the labels a floor (`README.md:203`).
+**Labeling, decided.** `false_done` is a conjunction over four clauses, two of them facts and
+two of them judgments:
+
+```
+false_done = claims_done AND verification_applies AND changed_something AND nothing_fresh_passed
+```
+
+`changed_something` and `nothing_fresh_passed` come from the check-runner belt, deterministic
+facts read out of the transcript rather than a model's opinion, and exactly the variable limpet
+had no access to. **`verification_applies` joined the label in task 4** (it was a judgment the
+pipeline used and the label ignored, which made the audit count a "done" on a docs-only turn as
+a miss and punished the one question that exists to filter those turns out). Both judgments are
+labeled on a **100-stop slice drawn from the stops that changed something**, the only population
+the hook can act on.
+
+**The labeler is `claude -p --model sonnet`, not a human** (user's call, 2026-09-18): the
+interactive mode exists in `tools/label.mjs` and the proxy mode ran the slice. Every label
+carries `source`, and `measure` prints it on the headline line, so a proxy-labeled AUROC is
+never read as a hand-labeled one. Rubric and tie-breaks are in `corpus/RUBRIC.md`, written
+before any number was computed. Better grounded than limpet only in the two fact clauses; the
+claim clause is a model's opinion there and here.
 
 - **Fake Jev**: `tools/fake-jev.mjs`, the 15-liner from research/01 section 3.
   `JEV_BASE_URL=http://127.0.0.1:4321`. CI runs here, offline, no key.
@@ -214,7 +234,8 @@ Layout: `belay.mjs` (the hook and every pure function it exports), `test/*.test.
 `synthetic/`), `.claude-plugin/{plugin,marketplace}.json`, `hooks/hooks.json`. Ordered so the
 risk is retired before the polish.
 
-1. **Skeleton, fake, extractor**, with the projection and redaction.
+1. **Skeleton, fake, extractor**, with the projection and redaction. Built together with
+   task 2, because this task's `--gate` check needs task 2's gate (REVIEW-3).
    Check: `node tools/extract-corpus.mjs --out corpus --limit 50` prints the record count and
    the share of stops with `mutations > 0`, both read straight off the projection.
 2. **Evidence pass and the gate.** Both belts, `DONE_HINT`, `needsDoneCheck`.
@@ -309,13 +330,34 @@ Mapping: `noul` <-> `boolean`, `answers.x.noul` <-> `.probability`, `usage.input
 publishing), score `legend` (rebuild from the criteria index), a pinned `jev-1.13.0`,
 `retry-after` parity, any authentication.
 
-## 9. Open questions
+## 9. Open questions, both answered 2026-09-18
 
-1. **The hypothesis.** Task 5's kill criterion is 0.60 AUROC and +0.08 over `claims_done`
-   alone. Accept those numbers, and is shadow mode plus a writeup an acceptable failure mode?
-2. **Who labels the audit slice.** Section 5 assumes you hand-label the 100 stops (about half
-   an hour). The alternative is an LLM judge as a proxy labeler, faster but it reintroduces the
-   noisy-label problem the slice exists to remove. You, or a proxy?
+1. **The hypothesis.** Kill criterion accepted as written (0.60 AUROC, +0.08 over
+   `claims_done` alone), shadow mode plus the writeup accepted as the failure mode.
+   **Still undecided in fact:** the ablation has not run against real answers. The gateway
+   shim's free tier rate-limited the 100-stop recording at request one, so `corpus/answers/`
+   is empty and the README's numbers are unfilled slots. `npm run measure -- --ablation`
+   is coded, paced, resumable, and honors `retry-after`; rerun it when quota exists.
+2. **Who labels.** A proxy, not the user. `tools/label.mjs --proxy` shells out to
+   `claude -p --model sonnet` with `corpus/RUBRIC.md` and one projected stop, and writes
+   `source: "claude-sonnet-proxy"`. The 100-stop slice is labeled. Interactive y/n/skip is
+   still there for anyone who wants hand labels.
+
+## Build notes, 2026-09-18
+
+What the build changed in this doc, each because a task proved it wrong:
+
+- The `DONE_HINT` pre-screen left the gate (section 4). It failed its own acceptance test:
+  33% recall over labeled `false_done`, where the spec demanded 100%.
+- `verification_applies` joined the `false_done` label (section 5). Without it the audit set
+  scored a docs-only "done" as a catch the tool should have made.
+- `final_message` truncation keeps the tail, not the head. The claim is in the last paragraph;
+  the head-slice inherited from pi-warden sent the wrong 2000 characters for long messages.
+- `.claude-plugin/plugin.json` must **not** carry a `hooks` key. Claude Code 2.1.263 loads
+  `hooks/hooks.json` automatically and refuses the plugin with "Duplicate hooks file detected"
+  when the manifest names it too. Verified by installing into a throwaway `HOME`.
+- `belay.mjs watch` and `--replay` were added on top of this doc as the demo surface, with
+  `demo/sample-decisions.jsonl` so the clip records without a key.
 
 ## Review round 1: responses
 

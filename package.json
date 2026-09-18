@@ -1,0 +1,13 @@
+{
+  "name": "jev-belay",
+  "version": "0.1.0",
+  "description": "Claude Code Stop hook that blocks an unverified done",
+  "type": "module",
+  "license": "MIT",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "measure": "node tools/measure.mjs",
+    "fake": "node tools/fake-jev.mjs"
+  }
+}
