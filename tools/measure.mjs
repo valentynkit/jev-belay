@@ -82,10 +82,20 @@ async function answersFor(records, dir, { pace = Number(process.env.JEV_PACE_MS 
     const state = buildState(r.task, r.final_message, evidenceOf(r));
     const key = createHash("sha256").update(JSON.stringify({ state, questions: QUESTIONS })).digest("hex");
     const path = join(cacheDir, `${key}.json`);
-    if (existsSync(path)) { out.set(r.id, JSON.parse(readFileSync(path, "utf8"))); continue; }
+    // A cache file that will not parse (killed mid-write, full disk) is one record to
+    // fetch again, not a reason to abandon a resumable run partway through.
+    if (existsSync(path)) {
+      try { out.set(r.id, JSON.parse(readFileSync(path, "utf8"))); continue; } catch { /* refetch below */ }
+    }
     let res = null;
     for (let attempt = 0; ; attempt++) {
       try { res = await ask(state, QUESTIONS, {}); limitedSince = 0; break; } catch (err) {
+        // A missing or wrong key answers the same way every time. Say so once and stop,
+        // rather than spending five attempts per record discovering it again.
+        if (err.status === 401 || err.status === 403) {
+          process.stderr.write(`${err.message.slice(0, 120)}\nset TYPESAFE_API_KEY, or JEV_BASE_URL at the fake or the shim\n`);
+          break;
+        }
         const limited = err.status === 429 || /rate.?limit/i.test(err.message);
         if (limited && !limitedSince) limitedSince = Date.now();
         // Two minutes of rate limiting and we stop: a busy loop against a free tier helps
