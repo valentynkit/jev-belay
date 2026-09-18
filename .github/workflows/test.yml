@@ -1,0 +1,22 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      # No install step: the hook has no dependencies, and the suite runs against the fake
+      # Jev in tools/. Nothing here reaches the network or needs a key.
+      - run: npm test
+      - run: npm run measure -- --dir corpus/synthetic --labels

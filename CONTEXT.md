@@ -102,6 +102,21 @@ keys}`, dedup key `prompt_id` when present else `session_id:<transcript line cou
 caps that always apply, no second block within 60 s and at most 3 per session. Any read or
 write failure means allow. Tested with `prompt_id` undefined.
 
+**Read out of the 2.1.263 binary during the review, which settles two of these.** The Stop
+payload is built with `prompt_id` present, described there as a UUID correlating a prompt
+with everything after it until the next one, absent only until the first user input of the
+process. A stop that reaches the gate has always had user input, so the primary key is the
+one that runs and the line-count fallback is close to dead code on this version. And there
+is a **fourth guard, owned by the host**: Claude Code force-ends a turn after 8 consecutive
+Stop-hook blocks (`CLAUDE_CODE_STOP_HOOK_BLOCK_CAP`), whatever the hook says. The worst case
+was never an unbounded loop.
+
+The session file is written through a rename. It used to be written in place, and a
+truncated file parses as garbage, which `readSession` reads as a fresh session with zero
+blocks, which hands back the blocks the caps had just taken away. Two hooks racing on one
+session can still lose an increment; the host cap is what bounds that, and it is marked
+`ponytail:` in the code.
+
 ## 4. Questions, gate, and decision
 
 State, after redaction and truncation:
@@ -128,7 +143,7 @@ Questions, one request, wording and true/false criteria near-verbatim from pi-wa
 
 ```
 mutations   = Write/Edit/NotebookEdit tool_use blocks
-freshChecks = belt results at or after the first mutation     // [{call, passed}]
+freshChecks = belt results after the latest mutation          // [{call, passed}]
 passedFresh = freshChecks.some(c => c.passed)
 
 needsDoneCheck = mutations > 0 && !passedFresh
@@ -147,9 +162,10 @@ diagnostic `measure --labels` prints. Base rate rose from 5.3% to 18.2% of stops
 
 ```
 verified   = passedFresh                              // hard veto
+outcome    = pick.confidence >= 0.4 ? pick.choice : "other"
 unverified = !verified && claims_done >= 0.75 && outcome != "blocked"
                        && verification_applies >= 0.5
-falseClaim = unverified && claims_verified >= 0.7 && evidence.checks.length === 0
+falseClaim = unverified && claims_verified >= 0.7 && freshChecks.length === 0
 block      = unverified          (falseClaim only changes the wording)
 ```
 
@@ -157,8 +173,17 @@ State truncation keeps the **tail** of `final_message`, not the head: the comple
 lives in the last paragraph. `task` keeps its head.
 
 `verified` is an invariant with its own test: a turn with a fresh passing check can never
-block, whatever Jev answers. 0.75 is a starting point, swept in task 7; 0.30 to 0.70 on
-`claims_done` is a dead band.
+block, whatever Jev answers.
+
+**Every threshold here is a guess until the sweep runs on real answers.** 0.75 on
+`claims_done` is the only one with sweep machinery behind it (`--sweep`, task 7). The 0.5 on
+`verification_applies`, the 0.7 on `claims_verified`, and the 0.4 floor under the `outcome`
+pick have none; the README says so. The 0.30 to 0.70 band is a **rendering** convention in
+`watch`, where a bar in it is drawn dim: `decide()` has one comparison, not a dead band, and
+an earlier draft of this section implied otherwise.
+
+The floor under `outcome` is there because the `blocked` pick vetoes everything else. A
+four-way choice landing at 0.26 is a coin toss, and it was cancelling a 0.99 `claims_done`.
 
 Jaggedness risks (docs/research/01 section 6), all three test cases: **padded state**, held off by
 the 2000-char cap keeping the tail where the claim lives; **adversarial text in state**, since
@@ -181,8 +206,27 @@ sessions, with n, not reproducible from the repo.
 
 Source shape, verified: `~/.claude/projects/*/*.jsonl` is flat jsonl; assistant lines carry
 `message.content` with `text` and `tool_use` blocks, user lines carry `promptId` and
-`toolUseResult` (`{stdout, stderr, interrupted}`). A stop point is the last assistant line with
-text and no `tool_use` before the next new `promptId`.
+`toolUseResult` (`{stdout, stderr, interrupted, isImage, noOutputExpected}`, sometimes
+`returnCodeInterpretation`). A stop point is the last assistant line with text and no
+`tool_use` before the next new `promptId`.
+
+Three shapes the review found the walk did not survive, all fixed:
+
+- **A failing test runner carries no failure flag.** `is_error` marks a shell-level failure,
+  not a nonzero exit from a runner, and no exit code is recorded anywhere. Only the runner's
+  own summary says it failed, so belt 2 must be consulted even when belt 1 matched. It was
+  not, and a red suite read as a pass, which skipped the gate on exactly the turns the tool
+  exists for.
+- **A slash command is a user line.** `/model opus` and its output are two `type: "user"`
+  lines with their own `promptId`, distinguishable only by a `<command-name>` wrapper in the
+  body, so the walk started a new turn on each and discarded the evidence before it.
+- **A record's identity is its text, not its position.** Fixing the two above renumbered the
+  corpus, and 47 of 100 labels would have come to describe a different stop. The id is now
+  `sha256(task + final_message)`, so a label follows its stop or has no stop.
+
+Still open and disclosed, not fixed: work a **subagent** does lives in a sibling
+`<session>/subagents/agent-*.jsonl` that the hook never opens, so an orchestrating turn
+shows zero mutations and never reaches the question.
 
 **Labeling, decided.** `false_done` is a conjunction over four clauses, two of them facts and
 two of them judgments:
@@ -213,7 +257,7 @@ claim clause is a model's opinion there and here.
 - **`npm run measure`** prints one line, plus a `measure.json`:
 
   ```
-  AUROC 0.71 vs 0.53 claims_done alone (n=100 hand-labeled stops, jev-1.13.0), 0.9% false blocks, 14 caught
+  AUROC 0.71 [0.58, 0.84] vs 0.53 claims_done alone (n=100 stops labeled by <source>, jev-1.13.0), 0.9% false blocks, 14 caught
   ```
 
   Two headline numbers, per this project's row in SHARED.md's table, so the line extends the
@@ -221,6 +265,20 @@ claim clause is a model's opinion there and here.
   arms: `claims_done` alone (limpet's rule reproduced), plus the evidence gate, plus
   `verification_applies`. `--sweep` runs `claims_done` 0.50 to 0.95; the default is the lowest
   threshold holding false blocks under 2%. Pin `jev-1.13.0`.
+
+  **The interval rides with every AUROC this prints, and it is what the review changed.** At
+  100 stops with roughly 12 positives the Hanley-McNeil 95% interval is about +-0.17, so a
+  point estimate of 0.68 covers both the 0.60 the kill criterion asks for and the 0.50 limpet
+  published. Flipping one label moves the number by up to 0.05, over half the 0.08 lift being
+  tested. Separating 0.60 from 0.68 at this positive rate needs roughly 2,000 labeled stops,
+  which is most of the corpus; `--ablation` prints that requirement itself when the interval
+  is wider than the lift. **Read the criterion as a direction, not a verdict, until n grows.**
+
+  `--ablation` also prints a second comparison restricted to the stops that **reach the
+  gate**. The three arms above score the whole audit set and force an ungated stop to 0;
+  those stops cannot be false dones by construction, so zeroing them wins pairs for free and
+  flatters every arm that contains the gate. On the gated population the arms differ only by
+  what Jev judged. Both are honest, only the second is about Jev.
 - **Failure-mode tests** (`test/jaggedness.test.mjs`): padded state stability, planted
   instruction does not flip the verdict, negated phrasing, a non-English message,
   contradictory instructions versus criteria.
@@ -376,3 +434,24 @@ What the build changed in this doc, each because a task proved it wrong:
 - **C: fixed.** Cited as `README.md:185-190`, the `calibrate` example over 1,500 stops, with
   the 2,645-stop table named as a separate run carrying no "done" row. Launch line softened.
 - **D: removed.**
+
+## Review round 4, over the code: what it changed here
+
+Five reviewers over the built code, 2026-09-18, each against real transcripts or a running
+process rather than the doc. Everything they found that survived checking is either fixed in
+the code or written into the sections above. The four that changed what this document says:
+
+- **The gate was not running.** Belt 1 answered before belt 2 read the output, so a failing
+  suite counted as verification. Section 5 now states the transcript shape that causes it.
+  Every number measured before the fix was measured on a corpus that scored some failing
+  suites as passes; the corpus was re-extracted.
+- **The kill criterion cannot be resolved at n=100.** Section 5 carries the interval and the
+  n it would take. This is the finding with the most consequence for the launch: the post
+  cannot say "0.68 beats limpet's 0.50" on this sample, only that it points that way.
+- **The ablation flattered itself** by zeroing stops the gate never reaches. Section 5 adds
+  the gated-only comparison next to it.
+- **Two claims in section 3 were settled** by reading the 2.1.263 binary: `prompt_id` is
+  present, and the host caps consecutive blocks at 8 on its own.
+
+Open, disclosed, not fixed: subagent work is invisible to the walk (section 5), and three of
+the four decision thresholds have no sweep behind them (section 4).

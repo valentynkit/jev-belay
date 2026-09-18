@@ -1,5 +1,6 @@
 {
   "name": "jev-belay",
+  "description": "One hook: refuse an unverified done",
   "owner": { "name": "valentynkit" },
   "plugins": [
     { "name": "jev-belay", "source": "./", "description": "Blocks \"done, tests pass\" when nothing ran" }

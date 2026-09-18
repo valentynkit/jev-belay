@@ -6,6 +6,36 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- The gate now runs. Belt 1 reported a pass as soon as a command named a runner and the
+  host had not flagged an error, but Claude Code does not flag a test runner's nonzero
+  exit, so a failing suite counted as verification and the turn skipped the question.
+- A slash command no longer splits a turn, which used to discard the evidence before it.
+- The hook no longer becomes a silent no-op when it is invoked through a symlink.
+- `watch` no longer drops every decision after the first one containing a non-ASCII
+  character.
+- Redaction covers JSON-quoted keys, Stripe and npm tokens, and a password in a connection
+  string with no username. It no longer eats the word after "bearer" in ordinary prose.
+- Paths are rewritten using the transcript's own home rather than `$HOME`.
+- The `outcome` choice needs 0.4 confidence before its `blocked` value vetoes a decision.
+- Session state is written through a rename; a truncated file used to reset the block caps.
+- `readStdin` gives up after 10 s instead of stalling the turn until the host kills it.
+
+### Added
+
+- Belt 2 reads vitest, bun test, mix, dotnet, gradle, maven and eslint summaries, plus
+  pytest runs long enough to print a wall clock and five-digit TypeScript error codes.
+- Every AUROC prints its 95% interval, and `--ablation` adds the comparison restricted to
+  stops that reach the gate, next to the one that includes those it zeroes.
+- `CONTRIBUTING.md`, and a GitHub Actions workflow running the suite offline on Node 20
+  and 22.
+
+### Changed
+
+- A corpus record's id is the hash of its projected text rather than its position in the
+  file, so a label follows the stop it describes.
+
 ## [0.1.0] - 2026-09-18
 
 ### Added
