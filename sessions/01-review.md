@@ -4,12 +4,12 @@ Run from inside `jev-belay/` in a fresh Claude Code session.
 
 ## Context to load first
 
-1. `../CLAUDE.md` (monorepo rules, real Jev access), then `CLAUDE.md` here ("Build state").
+1. `CLAUDE.md` ("Lab rules") (monorepo rules, real Jev access), then `CLAUDE.md` here ("Build state").
 2. `CONTEXT.md` in full, including "Build notes" at the end; `REVIEW-3.md` for the verdict;
-   `../SHARED.md` for the contract.
-3. `../research/04-quality-bar-and-launch.md` sections 1 and 3 (README skeleton, measure
-   line), `../research/01-api-and-testing.md` section 6 (failure modes).
-4. Prior art at `/tmp/prior-art/` (re-clone per `../CLAUDE.md` if gone): DevMortimer_pi-warden
+   `docs/SHARED.md` for the contract.
+3. `docs/research/04-quality-bar-and-launch.md` sections 1 and 3 (README skeleton, measure
+   line), `docs/research/01-api-and-testing.md` section 6 (failure modes).
+4. Prior art at `/tmp/prior-art/` (re-clone per `CLAUDE.md` if gone): DevMortimer_pi-warden
    (`src/done.ts`, the belts and questions), noplan-inc_limpet (the 0.50 AUROC claim at
    `README.md:185-190`), leepokai_jev-guard (`src/jev.js:29-67`, the client).
 5. `corpus/RUBRIC.md`. The real corpus under `corpus/` is private: read counts and
@@ -41,7 +41,7 @@ Parallel subagents, at most 5 in flight, drafting on opus, reviewers on sonnet, 
    `claims_done` alone means shadow mode by default and the writeup, not a blocker. Put
    the three AUROCs and the false-block rate in the README and in `measure.json`. Add a
    20-stop human-versus-proxy agreement check if the user will label 20 (ask once).
-4. **The README, state of the art.** `research/04` section 1 order: the measured line (or
+4. **The README, state of the art.** `docs/research/04` section 1 order: the measured line (or
    `__` plus the command that fills it) first, the marketplace install command, the
    asciinema GIF above the fold, Why built on limpet's 0.50 with credit and the link, Cost,
    How it works from the section 3 ladder, Known limits (read-only turns never reach the

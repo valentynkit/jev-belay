@@ -1,6 +1,6 @@
 # jev-belay
 
-Read `../SHARED.md` first. This doc covers one project: the Claude Code Stop hook.
+Read `docs/SHARED.md` first. This doc covers one project: the Claude Code Stop hook.
 
 ## Name
 
@@ -160,7 +160,7 @@ lives in the last paragraph. `task` keeps its head.
 block, whatever Jev answers. 0.75 is a starting point, swept in task 7; 0.30 to 0.70 on
 `claims_done` is a dead band.
 
-Jaggedness risks (research/01 section 6), all three test cases: **padded state**, held off by
+Jaggedness risks (docs/research/01 section 6), all three test cases: **padded state**, held off by
 the 2000-char cap keeping the tail where the claim lives; **adversarial text in state**, since
 the message is model-authored and Jev does not treat state as untrusted, bounded by the block
 caps; **negation**, hence explicit true and false criteria. We never assert
@@ -206,7 +206,7 @@ never read as a hand-labeled one. Rubric and tie-breaks are in `corpus/RUBRIC.md
 before any number was computed. Better grounded than limpet only in the two fact clauses; the
 claim clause is a model's opinion there and here.
 
-- **Fake Jev**: `tools/fake-jev.mjs`, the 15-liner from research/01 section 3.
+- **Fake Jev**: `tools/fake-jev.mjs`, the 15-liner from docs/research/01 section 3.
   `JEV_BASE_URL=http://127.0.0.1:4321`. CI runs here, offline, no key.
 - **Record and replay**: `sha256(state + questions)` keys `corpus/answers/<hash>.json`, also
   gitignored.
@@ -288,7 +288,7 @@ session-keyed guard, at the cost of one extra possible block per session.
 
 ## 7. README slots
 
-Section order per research/04 section 1; every slot is text already in this doc (tagline from
+Section order per docs/research/04 section 1; every slot is text already in this doc (tagline from
 the measure line, command and Requirements from Install, Why from the limpet-0.50 paragraph,
 Cost from the per-stop figures, How it works from the section 3 ladder). `.env.example`:
 `TYPESAFE_API_KEY` required, `AI_GATEWAY_API_KEY` alternative, `JEV_BELAY_THRESHOLD` and
@@ -312,7 +312,7 @@ it points at a missing variable: evidence, not wording. Here is the ablation."* 
 limpet; that is accurate about what they measured and earns a reply from a builder rather than
 a competitor.
 
-Assets per research/04 section 2: `asciinema rec` into `agg` into `gifsicle -O3`, under 3 MB.
+Assets per docs/research/04 section 2: `asciinema rec` into `agg` into `gifsicle -O3`, under 3 MB.
 Record a real session in a scratch repo, not a vhs script, since the claim is that it fires on
 real behaviour.
 
