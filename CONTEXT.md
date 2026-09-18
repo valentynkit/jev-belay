@@ -453,5 +453,24 @@ the code or written into the sections above. The four that changed what this doc
 - **Two claims in section 3 were settled** by reading the 2.1.263 binary: `prompt_id` is
   present, and the host caps consecutive blocks at 8 on its own.
 
-Open, disclosed, not fixed: subagent work is invisible to the walk (section 5), and three of
-the four decision thresholds have no sweep behind them (section 4).
+Open, disclosed, not fixed. Each was checked, judged, and left:
+
+- **Subagent work is invisible** to the walk (section 5), and **three of the four decision
+  thresholds have no sweep** behind them (section 4). Both are in the README's Known limits.
+- **Redaction cannot catch an unlabeled high-entropy string.** A bare AWS secret key or any
+  40-character blob pasted with no keyword around it looks like every other token. The rules
+  are shape-and-keyword based on purpose; sniffing entropy would redact real prose.
+- **A `Label: value` sentence loses the word after the colon.** "Password: must be at least
+  12 characters" becomes "Password: `<redacted>` be at least 12 characters". Tightening the
+  rule to spare it would let through the assignment form it exists to catch. The cost is one
+  word inside a 2000-character message, and it fails in the safe direction.
+- **`MUTATING_TOOLS` is a named set**, so a write-capable MCP tool counts as no change and
+  the turn never reaches the question. No such tool appears anywhere in this corpus, and
+  guessing at names ages worse than adding one when it shows up.
+- **The rotated decision log is never pruned.** `decisions.jsonl.1` stays until deleted by
+  hand. The log is off by default and capped at 5 MB before rotating, so the ceiling is
+  10 MB of already-redacted text.
+- **The answer cache key is `JSON.stringify` order-sensitive.** `buildState` builds its
+  object from a literal, so the order is stable today. Sorting the keys would be the robust
+  fix and would also invalidate every answer already recorded, which is the wrong trade
+  while recording is the rate-limited step.
