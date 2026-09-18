@@ -1,7 +1,7 @@
 # jev-belay
 
 Claude Code Stop hook: blocks an unverified "done", fails open on everything else. Read
-`../CLAUDE.md` for the monorepo rules, then `CONTEXT.md` here in full.
+the "Lab rules" section below for the monorepo rules, then `CONTEXT.md` here in full.
 
 Status 2026-09-18: tasks 1 to 8 built, `npm test` green offline, corpus extracted and the
 100-stop audit slice labeled by the sonnet proxy. **The kill criterion is still undecided**:
@@ -16,7 +16,7 @@ Project-specific rules:
 - Any hook error exits 0. Every test asserting a block has a sibling asserting fail-open.
 - Zero dependencies, Node 20+, single `belay.mjs` plus `tools/` and `test/`.
 - The gateway shim is not this project; its spec sits at the end of CONTEXT.md and it
-  lives at `../tools/jev-proxy/`.
+  lives at `~/Projects/mine/jev-lab/tools/jev-proxy/`.
 
 ## Build state (2026-09-18, first build session)
 
@@ -44,7 +44,7 @@ fails on the duplicate).
 Two `ponytail:` markers: the fake's `--synthetic` keyword model (`tools/fake-jev.mjs:16`)
 and `label.mjs` not retrying a failed proxy call (`tools/label.mjs:117`).
 
-Blocked on: Vercel AI Gateway paid credits (see `../CLAUDE.md`, "Real Jev access"). Then
+Blocked on: Vercel AI Gateway paid credits (see the "Lab rules" section below, "Real Jev access"). Then
 `JEV_BASE_URL=http://127.0.0.1:4322 npm run measure -- --ablation`, resumable, decides the
 kill criterion, and `--sweep` picks the threshold.
 
@@ -58,3 +58,36 @@ lines, compaction markers, `toolUseResult` variants); belt 2's runner-summary re
 runners not in the fixtures (vitest, bun test, mix test, dotnet test); redaction coverage;
 the session-file guard under concurrent hook fires; `decide()` thresholds once real
 answers exist; the proxy labeler's rubric drift versus a human on 20 stops.
+
+## Lab rules (from the jev-lab monorepo this repo was split from)
+
+This project was designed and first built inside `valentynkit/jev-lab` (research reports,
+the shared contract, the gateway shim). `docs/SHARED.md` and `docs/research/` are copies
+taken at the split on 2026-09-18; the lab repo is canonical for them.
+
+## Hard rules (also in docs/SHARED.md)
+
+- No network and no key by default. Tests run against the project's fake Jev. Real calls
+  only through `JEV_BASE_URL` set to the gateway shim or the direct API.
+- Jev only makes a system stricter, never looser. Every error path fails open or falls
+  back to the tool's no-Jev behavior.
+- Every task ends with its runnable check from CONTEXT.md passing; paste the output before
+  calling it done.
+- Local commits only, one project per commit where possible, human voice, no
+  Co-Authored-By, no em dashes. The user pushes and creates GitHub repos.
+- Fewest files that work. Mark deliberate shortcuts with `ponytail:` naming the ceiling.
+- The user's own transcripts (jev-belay corpus) never leave `corpus/`, which is gitignored.
+
+## Prior-art clones
+
+`/tmp/prior-art/<owner>_<repo>/` held shallow clones during design. If gone, re-clone the
+ones CONTEXT.md cites: `git clone -q --depth 1 https://github.com/<owner>/<repo> /tmp/prior-art/<owner>_<repo>`.
+
+## Real Jev access (2026-09-18)
+
+No TypeSafe key yet. Real answers come through Vercel AI Gateway: the key sits in
+`~/.config/jev-lab/env` (`AI_GATEWAY_API_KEY`, $5 budget cap), and `tools/jev-proxy` in the jev-lab repo (`~/Projects/mine/jev-lab/tools/jev-proxy`) turns
+the direct wire format into gateway evaluate calls on `127.0.0.1:4322`. Start it, then set
+`JEV_BASE_URL=http://127.0.0.1:4322` for record and measure steps only. Never loop against
+it; unit tests stay on the fakes. Numbers measured this way carry the "via gateway shim"
+footnote until re-measured on the direct API against a pinned `jev-1.13.0`.
