@@ -18,7 +18,13 @@ interval is wider than the difference being tested.
 /plugin install jev-belay@jev-belay
 ```
 
-<!-- demo.gif goes here: the block, the fix, the second Done. See demo/README.md. -->
+![the watch pane blocking an unverified done, then letting a verified one through](demo/demo.gif)
+
+One real session: the model renames a function across four files, says "Done", runs
+nothing, and gets blocked. It runs the suite, finds a bug the rename exposed, fixes it, and
+the next turn ends on a passing check the gate lets through for free. The probabilities in
+this take came from `tools/fake-jev.mjs`, which is why the footer says so; `demo/README.md`
+has the one command that re-records it against a key.
 
 ## Why
 
@@ -94,9 +100,13 @@ report the actual result.
 Watch the decisions as they land, which is also how the demo is recorded:
 
 ```
-JEV_BELAY_LOG=1 node belay.mjs watch
+JEV_BELAY_LOG=1 node belay.mjs watch          --wide for 120 columns, --pace 0 for no fill
 node belay.mjs --replay demo/sample-decisions.jsonl
 ```
+
+The pane draws every stop that reached the gate, and every stop that got past it on a
+passing check, which costs nothing and says so. `NO_COLOR` and a non-terminal stdout both
+turn off colour and the fill animation.
 
 ## How it works
 
@@ -108,6 +118,7 @@ Stop payload on stdin
   │    belt 1: a runner named in the command text
   │    belt 2: a runner's own summary in the output
   ├─ nothing changed, or a check passed after the last change -> exit 0
+  ├─ read it again 300 ms later: the closing message lands after Stop fires
   ├─ one Jev call, four questions, state is 3 short fields
   └─ decide() -> block: exit 2 with a reason, or exit 0
 ```

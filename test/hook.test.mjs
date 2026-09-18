@@ -2,14 +2,14 @@
 // same turn fails open when something goes wrong.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, chmodSync, mkdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, chmodSync, mkdirSync, appendFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 // A throwaway HOME before belay.mjs is imported: the session guard writes under it.
 process.env.HOME = mkdtempSync(join(tmpdir(), "belay-home-"));
 const { decide, runHook } = await import("../belay.mjs");
-const { CARGO_PASS, JEST_FAIL, transcriptFile } = await import("./fixtures.mjs");
+const { CARGO_PASS, JEST_FAIL, transcript, transcriptFile } = await import("./fixtures.mjs");
 const { startFake, baseUrlOf, DEFAULT_FIXTURES } = await import("../tools/fake-jev.mjs");
 
 const BLOCKING = [
@@ -188,4 +188,31 @@ test("the decision log stays off unless JEV_BELAY_LOG=1", async () => {
   const stdin = payload({ transcript_path: transcriptFile(BLOCKING) });
   const result = await withFake(DEFAULT_FIXTURES, (env) => runHook({ env: { ...env, JEV_BELAY_LOG: "0" }, stdin }));
   assert.equal(result.exit, 2);
+});
+
+// Seen for real on 2026-09-19 while recording the demo: Claude Code fired Stop with the
+// two Edits on disk and the "Done." text still buffered, so the hook judged an empty
+// message and the turn sailed through. Both halves here: the re-read catches the late
+// write, and a message that never arrives still fails open.
+test("a final message that lands after the Stop fires is what gets judged", async () => {
+  // A preamble before the tool calls is the shape that hid this: the slice is not empty,
+  // it just ends on the wrong sentence, so the verdict alone cannot catch the bug. Assert
+  // on the message that actually left the machine.
+  const path = transcriptFile([{ prompt: "add a retry to the fetch helper" }, { text: "I will add the retry now." }, ...BLOCKING.slice(1, -1)]);
+  setTimeout(() => appendFileSync(path, JSON.stringify(transcript([BLOCKING.at(-1)])[0]) + "\n"), 80);
+  let sent;
+  const fetchImpl = async (url, init) => {
+    sent = JSON.parse(init.body).state;
+    return new Response(JSON.stringify({ model: "fake", answers: DEFAULT_FIXTURES, usage: {} }), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  const result = await runHook({ env: { TYPESAFE_API_KEY: "k" }, stdin: payload({ transcript_path: path }), fetchImpl });
+  assert.equal(sent.final_message, "Done. The retry is implemented and the tests pass.");
+  assert.equal(result.exit, 2);
+});
+
+test("a turn that edited and truly said nothing claims nothing, so it ends", async () => {
+  const silent = { ...DEFAULT_FIXTURES, claims_done: { type: "noul", noul: 0.04 } };
+  const result = await withFake(silent, (env) =>
+    runHook({ env, stdin: payload({ transcript_path: transcriptFile(BLOCKING.slice(0, -1)) }) }));
+  assert.equal(result.exit, 0);
 });

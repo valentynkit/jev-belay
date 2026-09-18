@@ -54,9 +54,8 @@ fails on the duplicate).
 Two `ponytail:` markers: the fake's `--synthetic` keyword model (`tools/fake-jev.mjs:16`)
 and `label.mjs` not retrying a failed proxy call (`tools/label.mjs:117`).
 
-Blocked on: Vercel AI Gateway paid credits (see the "Lab rules" section below, "Real Jev access"). Then
-`JEV_BASE_URL=http://127.0.0.1:4322 npm run measure -- --ablation`, resumable, decides the
-kill criterion, and `--sweep` picks the threshold.
+Blocked on: Vercel AI Gateway paid credits. See "Blocked on, one thing" below, which is the
+current statement of it; the free tier was re-tested on 2026-09-19 and gives five calls.
 
 ## Review state (2026-09-18, `sessions/01-review.md`)
 
@@ -91,9 +90,34 @@ Cleared, do not re-litigate: the AUROC implementation is correct rank-based Mann
 with tie credit; the labeler does not ask the model to judge the two fact clauses; the
 corpus projection carries only the eight projected keys; nothing under `corpus/` is tracked.
 
+## Demo state (2026-09-19, `sessions/02-demo.md`)
+
+`demo/take.sh` records one real `claude -p` session in a scratch repo and captures the watch
+pane with asciinema; `demo/README.md` carries the render commands and why the pane looks the
+way it does. `demo/demo.gif` (128 KB) and `demo/demo.mp4` (1080x1080, 6.5 s) are in the
+README and ready for X. `demo/post.md` has the X thread, the Show HN title, the r/ClaudeAI
+version and the awesome-list line, with the AUROC slots still empty.
+
+**The shipped take used `tools/fake-jev.mjs`**, so its four probabilities are fixtures and
+the footer says `fake-jev-fixtures`. Re-record with one command once the gateway has paid
+credits: `JEV_BASE_URL=http://127.0.0.1:4322 demo/take.sh demo/take.cast 60 18`.
+
+Found while recording, both fixed with tests: Claude Code writes the turn's closing message
+about 100 ms **after** it fires Stop, so the hook was judging a mid-turn preamble on every
+turn that ends with tool calls (it re-reads now); and a stop the gate let through was
+invisible (it is logged as `passed`, no call, no cost).
+
+## Blocked on, one thing
+
+Vercel AI Gateway paid credits. The free tier gives about five calls and then 429s that do
+not recover, which is enough for a demo take and not enough for the 100-stop ablation. With
+credits: `JEV_BASE_URL=http://127.0.0.1:4322 npm run measure -- --ablation` fills the
+README's two `__` slots and decides the kill criterion, `--sweep` picks the threshold, and
+the clip gets re-recorded with real numbers.
+
 ## Next session
 
-`sessions/02-demo.md` (the asciinema clip with the watch pane, the X thread).
+`sessions/03-*`: the ablation against a real key, then the launch.
 
 ## Lab rules (from the jev-lab monorepo this repo was split from)
 

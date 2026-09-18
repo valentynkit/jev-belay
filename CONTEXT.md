@@ -417,6 +417,31 @@ What the build changed in this doc, each because a task proved it wrong:
 - `belay.mjs watch` and `--replay` were added on top of this doc as the demo surface, with
   `demo/sample-decisions.jsonl` so the clip records without a key.
 
+## Demo session notes, 2026-09-19
+
+Recording the clip against a real session found one defect and closed one blind spot.
+
+- **The closing message lands after Stop fires.** Measured at about 100 ms on 2.1.263 with a
+  probe hook: at the moment Stop runs, the turn's last assistant text is not in the
+  transcript yet. Every turn that ends with tool calls was therefore judged on a mid-turn
+  preamble or on nothing, which scores `claims_done` near zero, which is silence on exactly
+  the turns this tool exists for. The hook now re-reads the transcript 300 ms after the
+  gate, keeping the second read only when the `promptId` still matches. Only stops past the
+  gate pay the wait, and they are the ones about to make a network call.
+- **A stop the gate lets through is now logged** with `verdict: "passed"` and no answers,
+  when it had changes and a fresh passing check. It is the half of the hook nobody could
+  see: shadow-mode users get "it watched this turn and stayed out", the clip gets its
+  second beat, and it costs a log line.
+- **The fake names itself.** `tools/fake-jev.mjs` reported `request.model` back, so a
+  fixture answer rendered as `jev-1.13.0` in the watch pane and would have put a real
+  model's name under a made-up number on camera. It answers as `fake-jev-fixtures` now.
+- **`demo/sample-decisions.jsonl` record 2 was unreachable.** It carried a passing check and
+  a full set of answers, which the live gate can never produce, because a fresh passing
+  check short-circuits before Jev is asked. It is a `passed` record now.
+- The pane was redrawn for a camera: `said` against `ran` as adjacent lines, sentences
+  instead of question ids, bars capped at 46 columns, a full-width verdict band, `--pace`
+  and `--wide`. Rationale and the two rejected layouts are in `demo/README.md`.
+
 ## Review round 1: responses
 
 - **Finding 5 (zero-mutation turns): disclosed, not widened.** A turn with no tool calls has no
