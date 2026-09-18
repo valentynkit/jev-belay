@@ -17,6 +17,19 @@ import { pathToFileURL } from "node:url";
 export const BELAY_HOME = join(homedir(), ".claude", "belay");
 export const MODEL = process.env.JEV_MODEL || "jev-1.13.0";
 
+/**
+ * Whether this module is the command being run, rather than an import.
+ *
+ * Node resolves import.meta.url through symlinks and argv[1] arrives as written, so
+ * comparing the two raw makes a script a silent no-op whenever the path it was invoked by
+ * crosses a link: a plugin cache under /tmp on macOS, a symlinked home in a container.
+ */
+export function isEntryPoint(moduleUrl) {
+  const argv1 = process.argv[1];
+  if (!argv1) return false;
+  try { return moduleUrl === pathToFileURL(realpathSync(argv1)).href; } catch { return false; }
+}
+
 // ---------------------------------------------------------------------------
 // Redaction. Broad on purpose: this runs on everything that leaves the machine.
 // Shapes and assignment forms follow pi-warden src/redact.ts:6-21.
@@ -699,15 +712,6 @@ async function main(argv) {
   process.exit(0);
 }
 
-// Node resolves import.meta.url through symlinks and argv[1] arrives as written, so
-// comparing them raw makes the hook a silent no-op whenever the path it was invoked by
-// crosses a link (a plugin cache under /tmp on macOS, a symlinked home in a container).
-function isEntryPoint() {
-  const argv1 = process.argv[1];
-  if (!argv1) return false;
-  try { return import.meta.url === pathToFileURL(realpathSync(argv1)).href; } catch { return false; }
-}
-
-if (isEntryPoint()) {
+if (isEntryPoint(import.meta.url)) {
   main(process.argv.slice(2));
 }
