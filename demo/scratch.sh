@@ -31,8 +31,11 @@ test("windows line endings", () => {
 });
 EOF
 echo '{ "name": "csv-demo", "type": "module", "scripts": { "test": "node --test" } }' > package.json
-# statusLine blanked: the user's own status bar is noise on camera.
-printf '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"node %s","timeout":25}]}]},"statusLine":{"type":"command","command":"true"}}\n' "$BELAY" > .claude/settings.json
+# The hook runs from a copy inside the scratch repo, so the path Claude Code prints on
+# camera is .claude/hooks/belay.mjs and not the author's home directory. statusLine
+# blanked: the user's own status bar is noise on camera.
+mkdir -p .claude/hooks && cp "$BELAY" .claude/hooks/belay.mjs
+printf '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"node .claude/hooks/belay.mjs","timeout":25}]}]},"statusLine":{"type":"command","command":"true"}}\n' > .claude/settings.json
 cat > .claude/settings.local.json <<'EOF'
 {"permissions":{"allow":["Read","Edit","Write","Bash(npm test:*)","Bash(node --test:*)","Bash(grep:*)","Bash(rg:*)","Bash(ls:*)","Bash(cat:*)"],"deny":[]}}
 EOF
