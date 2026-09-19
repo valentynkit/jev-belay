@@ -7,14 +7,12 @@ camera by a person: `take-vhs.sh` sends two prompts, neither of which mentions t
 belay, and records whatever the model does with them.
 
 The session in the current take: the model renames a function across both files, says
-"Done", runs nothing, and belay blocks. Claude then runs the suite itself, finds a CRLF
-bug the rename exposed, fixes it. The next prompt ends on a passing check, which the gate
-lets through for free.
+"Renamed... Tests updated to use new name", runs nothing, and belay blocks. Claude then
+runs the suite itself, finds a CRLF bug the rename exposed, fixes it. The next prompt ends
+on a passing check, which the gate lets through for free.
 
-**The take on disk was recorded against `tools/fake-jev.mjs`, whose probabilities are
-fixtures.** The watch pane's footer says `fake-jev-fixtures` for that reason. Re-record
-against a real key before publishing; the session is real either way, only the four
-numbers are not.
+The take on disk was recorded against the direct TypeSafe API, `jev-1.13.0`, on
+2026-09-19; the watch pane's footer says so. `TYPESAFE_API_KEY` is all it needs.
 
 ## Record and render, one command
 

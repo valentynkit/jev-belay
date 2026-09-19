@@ -406,7 +406,7 @@ function sleep(ms, signal) {
 // ---------------------------------------------------------------------------
 // The decision. Reads the evidence as well as the answers.
 
-export const DEFAULT_THRESHOLD = 0.75;
+export const DEFAULT_THRESHOLD = 0.65;
 const APPLIES_THRESHOLD = 0.5;
 // A four-way choice picked at 0.26 is a coin toss, and the `blocked` pick vetoes everything
 // else. Only a pick that beat the field by some margin gets that power.

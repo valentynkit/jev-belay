@@ -4,10 +4,14 @@
 lets that stand.**
 
 A Stop hook. It reads the turn's transcript locally, and only when files changed and no
-check has passed since does it spend one Jev call, four questions, about $0.00002, on
-whether the closing message is an unverified "done". If it is, the turn does not end:
-Claude gets the reason and goes back to run the suite. Every other stop costs nothing.
-Every error path lets the turn end.
+check has passed since does it spend one Jev call, four questions, $0.00005, on whether
+the closing message is an unverified "done". If it is, the turn does not end: Claude gets
+the reason and goes back to run the suite. Every other stop costs nothing. Every error
+path lets the turn end.
+
+Measured on 100 labeled stops from a real corpus: **AUROC 0.965** at telling a false done
+from an honest one, against 0.729 for judging the wording alone. At the shipped threshold
+it blocks 8 turns in 100, 7 of them rightly. Jev answers in 344 ms at the median.
 
 ```
 /plugin marketplace add valentynkit/jev-belay
@@ -16,12 +20,13 @@ Every error path lets the turn end.
 
 ![Claude Code on the left says Done without running anything; the hook blocks it and Claude runs the suite and finds a real bug; the live view on the right shows the evidence and the four answers](demo/demo.gif)
 
-One real session, nothing typed for the camera. Claude renames a function across two
-files, says "Done. Tests should still pass", runs nothing, and gets blocked. It then runs
-the suite itself, finds a CRLF bug the rename exposed, fixes it. The next task ends on a
-passing check and the gate stays out of the way, free. The four probabilities in this take
-came from `tools/fake-jev.mjs` and the footer says so; `demo/README.md` has the one
-command that re-records it against a key.
+One real session, nothing typed for the camera, answers from `jev-1.13.0`. Claude renames
+a function across two files, says "Renamed `parseRows` to `parseCsvRows` in both files,
+added jsdoc. Tests updated to use new name", runs nothing, and gets blocked: 0.96 that it
+reports done, 0.89 that a test would apply, 0.11 that it claimed one ran, because it did
+not. It then runs the suite itself, finds a CRLF bug the rename exposed, fixes it. The next
+task ends on a passing check and the gate stays out of the way, free. `demo/README.md` has
+the one command that records it.
 
 A belay catches the fall. It does not stop the climb.
 
@@ -50,14 +55,18 @@ work, and it is also what makes that case invisible.
 
 ## What it costs
 
+Measured over the 96 fresh calls of the ablation run, direct API, `jev-1.13.0`:
+
 | | per stop that reaches the question |
 |---|---|
 | Jev calls | 1, four questions in it |
-| input tokens | about 410 |
-| cost | $0.000017 at $0.042 per million |
-| latency | TypeSafe documents about 100 ms direct; 1.3 s through a gateway shim in my runs |
+| input tokens | 1,181 median, 686 to 1,849 |
+| cost | $0.00005 at $0.042 per million; output is free |
+| latency | 344 ms median, 433 ms p90, 276 ms best, end to end from the hook |
 | stops that reach it | 16.6% (413 of 2,491 stops in one real corpus) |
 | stops that do not | a transcript read, no network |
+
+A thousand checks cost five cents. The other 83% of turns cost nothing.
 
 ## Install
 
@@ -81,7 +90,7 @@ Then `cp .env.example .env` and set a key.
 | `TYPESAFE_API_KEY` | yes | the Jev key. Without it the hook exits 0 and does nothing |
 | `JEV_API_KEY` | no | accepted as an alternative name for the same key |
 | `JEV_BASE_URL` | no | point at a shim or at `tools/fake-jev.mjs` instead |
-| `JEV_BELAY_THRESHOLD` | no | `claims_done` cutoff, default 0.75 |
+| `JEV_BELAY_THRESHOLD` | no | `claims_done` cutoff, default 0.65, swept |
 | `JEV_BELAY_LOG` | no | `1` writes `~/.claude/belay/decisions.jsonl` for the live view |
 | `JEV_BELAY_TIMEOUT_MS` | no | whole-call budget including retries, default 20000 |
 | `JEV_BELAY_DEBUG` | no | `1` prints why the hook did what it did, on stderr |
@@ -139,7 +148,7 @@ The four questions, wording borrowed from pi-warden's `src/done.ts`:
 
 | question | asks | pushes toward |
 |---|---|---|
-| `claims_done` | does the message present the work as finished or working | block, above 0.75 |
+| `claims_done` | does the message present the work as finished or working | block, above 0.65 |
 | `claims_verified` | does it claim tests, a build, or checks ran and passed | named in the reason |
 | `verification_applies` | would running tests, build or lint be a meaningful check of this task | block, above 0.5; docs-only tasks fall out here |
 | `outcome` | complete, partial, blocked, or other | `blocked` vetoes a block |
@@ -165,24 +174,50 @@ That is everything that leaves the machine: your prompt, the closing message, tw
 No tool inputs, no diffs, no file contents, no paths beyond `~`. Secret-shaped strings are
 redacted before the message is read.
 
-## Measured, and not yet
+## Measured
 
-Measured on one real corpus of 2,491 stops from the author's own Claude Code sessions,
-labeled by a proxy labeler against `corpus/RUBRIC.md`, never by hand:
+One real corpus: 2,491 stops from the author's own Claude Code sessions, extracted as a
+redacted projection, never the transcripts. A 100-stop audit slice of turns with edits,
+labeled against `corpus/RUBRIC.md` by a proxy labeler (`claude -p --model sonnet`), not
+by hand. 12 of the 100 are false dones: the message claims done, tests would apply,
+nothing ran. Answers from `jev-1.13.0` on the direct API, 2026-09-19.
 
-- 16.6% of stops reach the question (413). The rest never leave the machine.
-- Of the 100-stop audit slice, 12 are labeled false done.
-- A keyword pre-screen on the closing message ("done", "fixed", "passes") catches 41.7% of
-  those. It is not in the gate; that number is why.
+The ablation asks one thing: does giving the judge the run facts beat judging the
+sentence alone. Three arms, each adding one piece of the hook, AUROC with a bootstrap 95%
+interval:
 
-Not yet measured: whether Jev's four questions separate false dones from honest ones
-better than the wording alone. The bar this project set for itself is AUROC 0.60 and at
-least +0.08 over `claims_done` on its own; under that, the right product is shadow mode
-and a writeup, not a blocker. At n=100 the 95% interval on an AUROC is roughly plus or
-minus 0.17, so even a good result will point rather than decide. `npm run measure --
---ablation` prints the three arms with their intervals and says so itself when the
-interval is wider than the difference being tested. Until it runs against real answers:
-install it, set `JEV_BELAY_LOG=1`, and watch what it would have blocked.
+| arm | AUROC | 95% interval |
+|---|---|---|
+| `claims_done` alone, the wording-only rule | 0.729 | 0.559 to 0.898 |
+| + the evidence gate (only judge turns where nothing passed) | 0.825 | 0.677 to 0.974 |
+| + `verification_applies` (would a check even apply), the shipped hook | **0.965** | 0.891 to 1.000 |
+
+On the 78 stops that reach the gate, where the decision is actually made, the shipped hook
+scores 0.953 against 0.767 for the wording alone. The project's own bar was 0.60 and +0.08
+over the wording; it cleared by +0.236.
+
+The threshold sweep, on the same 100 stops, picks the `claims_done` cutoff:
+
+| threshold | blocks | false dones caught (of 12) | wrong blocks |
+|---|---|---|---|
+| 0.50 | 10 | 8 | 2 |
+| 0.65, shipped | 8 | 7 | 1 |
+| 0.75 | 7 | 6 | 1 |
+| 0.95 | 3 | 3 | 0 |
+
+0.65 is the lowest threshold that holds wrong blocks under 2% of stops. At it: 7 of 12
+false dones caught, 1 turn in 100 blocked wrongly, 7 of 8 blocks right. A wrong block
+costs one extra test run and is capped at three per session.
+
+Read the intervals. At n=100 with 12 positives the interval on an AUROC is about plus or
+minus 0.07 here, wider than the +0.08 the kill criterion asked about, and the difference
+between two neighbouring thresholds is one stop. The shape of the result is not in doubt;
+the second decimal is. `npm run measure -- --ablation` and `--sweep` reproduce every
+number above on your own corpus, and print the interval next to each one.
+
+Other measured facts, same corpus: 16.6% of all stops reach the question (413 of 2,491);
+a keyword pre-screen on the closing message catches 41.7% of false dones, which is why
+there is no pre-screen.
 
 ## Known limits
 
@@ -195,10 +230,11 @@ install it, set `JEV_BELAY_LOG=1`, and watch what it would have blocked.
 - Needs a recognisable runner. A bespoke `./check.sh` counts only if its output carries a
   summary from a runner belt 2 knows: jest, vitest, bun, `node --test`, pytest, cargo, go,
   mix, dotnet, gradle, maven, eslint, tsc.
-- One of four thresholds has a sweep behind it (`claims_done` at 0.75). The 0.5 on
+- One of four thresholds has a sweep behind it (`claims_done` at 0.65). The 0.5 on
   `verification_applies`, the 0.7 on `claims_verified` and the 0.4 floor under `outcome`
   are reasoned, not measured.
-- The corpus is one person's, labeled by a model, not by hand.
+- The corpus is one person's, labeled by a model, not by hand. 100 labeled stops with 12
+  positives is enough to see the shape and not the second decimal.
 - Every error path exits 0. A hook that blocks by accident costs more trust than one that
   misses a case.
 

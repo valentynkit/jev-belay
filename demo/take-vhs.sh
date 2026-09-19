@@ -2,8 +2,9 @@
 # The clip, headless: a real Claude Code session in a scratch repo, Claude Code on the left
 # and the live view on the right, recorded by vhs, cut and captioned by render.mjs.
 #
-#   node tools/fake-jev.mjs --port 4321 &                    # or the gateway shim on 4322
-#   JEV_BASE_URL=http://127.0.0.1:4321 demo/take-vhs.sh      # -> demo/demo.mp4, demo/demo.gif
+#   TYPESAFE_API_KEY=... demo/take-vhs.sh                    # real answers -> demo/demo.mp4, demo/demo.gif
+#   node tools/fake-jev.mjs --port 4321 &
+#   JEV_BASE_URL=http://127.0.0.1:4321 demo/take-vhs.sh      # plumbing only, every probability a fixture
 #
 # Needs vhs, ttyd, ffmpeg, zellij, claude. vhs pulls its own Chromium on first run. Runs
 # from anywhere, including inside another Claude Code session: vhs owns a real pty, which
@@ -18,7 +19,7 @@ SCRATCH=${SCRATCH:-/tmp/belay-take}
 WORK=${WORK:-/tmp/belay-vhs}
 SESSION=belay-vhs
 LOG="$HOME/.claude/belay/decisions.jsonl"
-: "${JEV_BASE_URL:?set JEV_BASE_URL to the shim or the fake}"
+[ -n "${TYPESAFE_API_KEY:-}" ] || [ -n "${JEV_BASE_URL:-}" ] || { echo "set TYPESAFE_API_KEY for the real API, or JEV_BASE_URL for a shim or the fake"; exit 1; }
 for tool in vhs ttyd ffmpeg zellij claude; do command -v "$tool" >/dev/null || { echo "missing $tool"; exit 1; }; done
 
 "$HERE/scratch.sh" "$SCRATCH"
@@ -50,7 +51,7 @@ Set FontFamily "JetBrainsMono Nerd Font Mono"
 Set WaitTimeout 240s
 
 Hide
-Type "env -u ZELLIJ -u ZELLIJ_SESSION_NAME -u CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_FORCE_SESSION_PERSIST=1 JEV_BELAY_LOG=1 TYPESAFE_API_KEY=${TYPESAFE_API_KEY:-demo} JEV_BASE_URL=$JEV_BASE_URL zellij --config-dir $SCRATCH/zj -s $SESSION -n $SCRATCH/layout.kdl"
+Type "env -u ZELLIJ -u ZELLIJ_SESSION_NAME -u CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_FORCE_SESSION_PERSIST=1 JEV_BELAY_LOG=1 TYPESAFE_API_KEY=${TYPESAFE_API_KEY:-demo} ${JEV_BASE_URL:+JEV_BASE_URL=$JEV_BASE_URL} zellij --config-dir $SCRATCH/zj -s $SESSION -n $SCRATCH/layout.kdl"
 Enter
 Sleep 8s
 Escape

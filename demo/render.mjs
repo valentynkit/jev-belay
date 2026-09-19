@@ -84,7 +84,7 @@ const still = (png, secs, path) => ffmpeg(["-loop", "1", "-framerate", "30", "-i
 still(shot("title", `<div class="card"><h1>Claude Code said Done.</h1><h1 class="red">Nothing ran.</h1>
   <p>jev-belay: a Stop hook that reads the transcript before it believes the claim</p></div>`, H), 2.8, join(work, "title.mp4"));
 still(shot("end", `<div class="card"><code>/plugin marketplace add valentynkit/jev-belay<br>/plugin install jev-belay@jev-belay</code>
-  <p>one Jev call on the 17% of stops that need it, $0.00002 each, every error path exits 0</p>
+  <p>one Jev call on the 17% of stops that need it, $0.00005 each, every error path exits 0</p>
   <div class="url">github.com/valentynkit/jev-belay</div></div>`, H), 3.5, join(work, "end.mp4"));
 
 // Source timeline segments: [from, to, speed, caption]. Held at 1x around the events,
@@ -93,7 +93,7 @@ const segs = [
   [0, t1 + 1.0, 1, "A real Claude Code session. Two prompts, and neither one mentions tests."],
   [t1 + 1.0, tBlocked - 3.5, FAST, "Claude reads the files and makes the change"],
   [tBlocked - 3.5, tBlocked + 1.2, 1, "It says <b>Done</b>. belay reads the transcript first: files changed, <b>nothing ran</b>"],
-  [tBlocked + 1.2, tBlocked + 8.5, 1, "One Jev call, four questions, $0.00002. <b>BLOCKED</b>, and the reason goes back to Claude"],
+  [tBlocked + 1.2, tBlocked + 8.5, 1, "One Jev call, four questions, $0.00005. <b>BLOCKED</b>, and the reason goes back to Claude"],
   [tBlocked + 8.5, t2 - 0.6, FAST, "Claude runs the suite itself, finds a real failure it was about to skip, and fixes it"],
   [t2 - 0.6, t2 + 4.0, 1, "Next task"],
   [t2 + 4.0, tPassed - 2.0, FAST, "This time it runs the tests before reporting"],
