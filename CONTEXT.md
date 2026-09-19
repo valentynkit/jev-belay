@@ -441,6 +441,17 @@ Recording the clip against a real session found one defect and closed one blind 
 - The pane was redrawn for a camera: `said` against `ran` as adjacent lines, sentences
   instead of question ids, bars capped at 46 columns, a full-width verdict band, `--pace`
   and `--wide`. Rationale and the two rejected layouts are in `demo/README.md`.
+- **The clip is the Claude Code pane, not the watch pane.** The first cut showed only the
+  bars and the user could not tell what the tool was. The shipped cut is a real
+  interactive session, Claude Code left and the live view right, captioned: the block
+  lands in Claude's context and Claude goes back to run the suite. Section 8's "not a vhs
+  script" stands in spirit: vhs only types the two prompts, and the model's behaviour is
+  whatever it is. vhs is also the only headless route to the Claude Code TUI from a tool
+  shell; `demo/README.md` lists what else was tried.
+- **The Claude Code TUI writes nothing in a nested session unless
+  `CLAUDE_CODE_FORCE_SESSION_PERSIST=1`** and `CLAUDE_CODE_CHILD_SESSION` is unset, which
+  matters for any test that runs the hook under an interactive Claude Code started from
+  another one.
 
 ## Review round 1: responses
 

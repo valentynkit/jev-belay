@@ -18,13 +18,14 @@ interval is wider than the difference being tested.
 /plugin install jev-belay@jev-belay
 ```
 
-![the watch pane blocking an unverified done, then letting a verified one through](demo/demo.gif)
+![Claude Code on the left says Done without running anything; the hook blocks it, Claude runs the suite and finds a real bug; the live view on the right shows the evidence and the four answers](demo/demo.gif)
 
-One real session: the model renames a function across four files, says "Done", runs
-nothing, and gets blocked. It runs the suite, finds a bug the rename exposed, fixes it, and
-the next turn ends on a passing check the gate lets through for free. The probabilities in
-this take came from `tools/fake-jev.mjs`, which is why the footer says so; `demo/README.md`
-has the one command that re-records it against a key.
+One real session, nothing typed for the camera. Claude renames a function across both
+files, says "Done. Tests should still pass", runs nothing, and gets blocked. It then runs
+the suite itself, finds a CRLF bug the rename exposed, fixes it, and the next turn ends on
+a passing check the gate lets through for free. The four probabilities in this take came
+from `tools/fake-jev.mjs`, which is why the footer says so; `demo/README.md` has the one
+command that re-records it against a key.
 
 ## Why
 

@@ -92,15 +92,21 @@ corpus projection carries only the eight projected keys; nothing under `corpus/`
 
 ## Demo state (2026-09-19, `sessions/02-demo.md`)
 
-`demo/take.sh` records one real `claude -p` session in a scratch repo and captures the watch
-pane with asciinema; `demo/README.md` carries the render commands and why the pane looks the
-way it does. `demo/demo.gif` (128 KB) and `demo/demo.mp4` (1080x1080, 6.5 s) are in the
-README and ready for X. `demo/post.md` has the X thread, the Show HN title, the r/ClaudeAI
-version and the awesome-list line, with the AUROC slots still empty.
+`demo/take-vhs.sh` records one real interactive Claude Code session in a scratch repo, two
+panes (Claude Code left, `belay.mjs watch` right), fully headless through vhs, and
+`demo/render.mjs` cuts it with captions, a title and an end card. `demo/demo.mp4`
+(1920x1080, 50 s) and `demo/demo.gif` (960 px, 2.9 MB) are in the README. `demo/README.md`
+has the pipeline, the eight things that went wrong getting it to run headless, and the
+pane rationale. `demo/post.md` has the X thread, the Show HN title, the r/ClaudeAI version
+and the awesome-list line, with the AUROC slots still empty.
+
+The first cut was the watch pane alone and the user could not tell what the tool was from
+it. The Claude Code pane is the product; the watch pane is the receipt. Do not ship a
+demo of this project that does not show the block landing in Claude Code.
 
 **The shipped take used `tools/fake-jev.mjs`**, so its four probabilities are fixtures and
 the footer says `fake-jev-fixtures`. Re-record with one command once the gateway has paid
-credits: `JEV_BASE_URL=http://127.0.0.1:4322 demo/take.sh demo/take.cast 60 18`.
+credits: `JEV_BASE_URL=http://127.0.0.1:4322 demo/take-vhs.sh`.
 
 Found while recording, both fixed with tests: Claude Code writes the turn's closing message
 about 100 ms **after** it fires Stop, so the hook was judging a mid-turn preamble on every
