@@ -342,9 +342,21 @@ export function buildState(task, finalMessage, evidence) {
 // hook near 30 s, and a killed hook never reaches its fail-open branch.
 
 export async function ask(state, questions, { env = process.env, fetchImpl = fetch, timeoutMs } = {}) {
+  // A ref'd timer, not AbortSignal.timeout(): that one is unref'd, so with nothing else
+  // holding the loop open the process can exit before the budget ever fires.
+  const control = new AbortController();
+  const timer = setTimeout(() => control.abort(new DOMException("jev timeout", "TimeoutError")),
+    timeoutMs ?? Number(env.JEV_BELAY_TIMEOUT_MS || 20_000));
+  try {
+    return await askWithin(control.signal, state, questions, { env, fetchImpl });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function askWithin(budget, state, questions, { env, fetchImpl }) {
   const base = env.JEV_BASE_URL || "https://api.typesafe.ai";
   const key = env.TYPESAFE_API_KEY || env.JEV_API_KEY;
-  const budget = AbortSignal.timeout(timeoutMs ?? Number(env.JEV_BELAY_TIMEOUT_MS || 20_000));
   const headers = { "Content-Type": "application/json" };
   if (key) headers.Authorization = `Bearer ${key}`;
   const body = JSON.stringify({ model: env.JEV_MODEL || MODEL, state, questions });
