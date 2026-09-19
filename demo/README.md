@@ -19,9 +19,8 @@ numbers are not.
 ## Record and render, one command
 
 ```sh
-# real answers, through the gateway shim
-(cd ~/Projects/mine/jev-lab/tools/jev-proxy && AI_GATEWAY_API_KEY=... npm start)
-JEV_BASE_URL=http://127.0.0.1:4322 demo/take-vhs.sh
+# real answers: a TypeSafe key, or a shim on JEV_BASE_URL that speaks the direct wire format
+TYPESAFE_API_KEY=... demo/take-vhs.sh
 
 # plumbing only, no key
 node tools/fake-jev.mjs --port 4321 &
