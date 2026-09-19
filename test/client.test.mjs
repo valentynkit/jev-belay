@@ -13,7 +13,7 @@ test("round trip against the fake returns four answers", async () => {
     assert.deepEqual(Object.keys(res.answers).sort(), ["claims_done", "claims_verified", "outcome", "verification_applies"]);
     assert.equal(res.answers.claims_done.noul, DEFAULT_FIXTURES.claims_done.noul);
     assert.equal(res.answers.outcome.choice, "complete");
-    assert.equal(res.model, "jev-1.13.0");
+    assert.equal(res.model, "fake-jev-fixtures"); // the fake names itself, so no clip or log can quote it as Jev
     assert.ok(res.usage.input_tokens > 0);
     assert.ok(res.elapsedMs >= 0);
   } finally { server.close(); }

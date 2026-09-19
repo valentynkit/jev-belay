@@ -1,8 +1,8 @@
-# The root .gitignore excludes corpus/ everywhere; re-include the directory so the
-# two tracked pieces below survive, then exclude everything extracted into it.
-!corpus/
+# corpus/ is built from your own Claude Code transcripts and stays on your machine. Only
+# the rubric and the eight synthetic stops are tracked.
 corpus/*
 !corpus/RUBRIC.md
 !corpus/synthetic/
-measure.json
 corpus/synthetic/answers/
+measure.json
+.env

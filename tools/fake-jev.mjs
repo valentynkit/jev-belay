@@ -54,7 +54,9 @@ export function startFake(fixtures = DEFAULT_FIXTURES, port = 0) {
       for (const name of Object.keys(request.questions || {})) if (table[name]) answers[name] = table[name];
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({
-        model: fixtures === "synthetic" ? "fake-jev-synthetic" : request.model || "jev-1.13.0",
+        // Never echo the requested model back: a fixture answer that reports itself as
+        // jev-1.13.0 puts a real model's name under a made-up number, on camera included.
+        model: fixtures === "synthetic" ? "fake-jev-synthetic" : "fake-jev-fixtures",
         answers,
         usage: { input_tokens: Math.ceil(JSON.stringify(request.state || "").length / 4), output_tokens: 0 },
       }));

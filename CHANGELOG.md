@@ -6,8 +6,25 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The `claims_done` threshold is 0.65, down from 0.75: the sweep over 100 labeled stops
+  answered by `jev-1.13.0` picks the lowest cutoff that keeps wrong blocks under 2%, and
+  0.65 catches one more false done than 0.75 at the same one wrong block.
+
+### Measured
+
+- The ablation on 100 labeled stops (12 false dones), direct API, `jev-1.13.0`: AUROC
+  0.729 for the wording alone, 0.825 with the evidence gate, 0.965 for the full hook.
+  Median call 1,181 input tokens, $0.00005, 344 ms end to end.
+
 ### Fixed
 
+- The hook reads the transcript a second time, 300 ms after the gate. Claude Code writes
+  the turn's closing message after it fires Stop, so a turn that ended on tool calls was
+  judged on a mid-turn preamble or on nothing at all.
+- `tools/fake-jev.mjs` answers as `fake-jev-fixtures` rather than echoing the requested
+  model name, so a fixture answer can never render as `jev-1.13.0`.
 - The gate now runs. Belt 1 reported a pass as soon as a command named a runner and the
   host had not flagged an error, but Claude Code does not flag a test runner's nonzero
   exit, so a failing suite counted as verification and the turn skipped the question.
@@ -24,6 +41,13 @@ All notable changes to this project are documented here. Format follows
 
 ### Added
 
+- A stop the gate lets through on a passing check is logged as `passed`, no call, no
+  cost, so the live view shows what the hook stayed out of.
+- The live view redrawn for a camera: what was said and what ran as adjacent lines,
+  sentences instead of question ids, a full-width verdict band, bars that fill, `--pace`
+  and `--wide`.
+- `demo/take-vhs.sh` and `demo/render.mjs`: the clip, recorded headless from a real
+  interactive Claude Code session and cut with captions.
 - Belt 2 reads vitest, bun test, mix, dotnet, gradle, maven and eslint summaries, plus
   pytest runs long enough to print a wall clock and five-digit TypeScript error codes.
 - Every AUROC prints its 95% interval, and `--ablation` adds the comparison restricted to
