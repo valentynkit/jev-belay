@@ -91,12 +91,17 @@ let extraPattern;
 
 /**
  * The project's own check script, named by the CHECK option as a regex over the command.
- * A broken regex is ignored rather than thrown: this is a hook, and it fails open.
+ * A broken regex is ignored rather than thrown: this is a hook, and it fails open. So is
+ * one that matches the empty string, since `.*` would make every Bash call a passing check
+ * and the gate a no-op.
  */
 function extraCheck() {
   if (extraPattern === undefined) {
     const source = option(process.env, "CHECK", "JEV_BELAY_CHECK");
-    try { extraPattern = source ? new RegExp(source) : null; } catch { extraPattern = null; }
+    try {
+      const pattern = source ? new RegExp(source) : null;
+      extraPattern = pattern && !pattern.test("") ? pattern : null;
+    } catch { extraPattern = null; }
   }
   return extraPattern;
 }
@@ -112,7 +117,7 @@ export function resetExtraCheck() { extraPattern = undefined; }
 export function checkSummary(output) {
   if (typeof output !== "string" || !output) return undefined;
   // deno colours its summary even when stdout is a file, and every rule below is anchored.
-  const tail = output.slice(-6000).replace(/\u001b\[[0-9;]*m/g, "");
+  const tail = output.slice(-6000).replace(/\u001b\[[0-9;]*[A-Za-z]/g, "");
   const nodeTest = /[ℹi] (?:tests|pass|fail) \d+/.test(tail) && /[ℹi] fail (\d+)/.exec(tail);
   if (nodeTest) return Number(nodeTest[1]) > 0 ? "fail" : "pass";
   const jest = /^Tests:\s+(?:(\d+) failed, )?.*?\d+ total/m.exec(tail);
@@ -148,8 +153,10 @@ export function checkSummary(output) {
   const biome = /^Checked \d+ files? in [^\n]*/m.exec(tail);
   if (biome) return /\berrors?\b/.test(biome[0]) ? "fail" : "pass";
   if (/^\s*\d+ passing \(/m.test(tail)) return /^\s*\d+ failing\b/m.test(tail) ? "fail" : "pass";
-  const rspec = /^\s*\d+ examples?, (\d+) failures?/m.exec(tail);
-  if (rspec) return Number(rspec[1]) > 0 ? "fail" : "pass";
+  // An exception in a before(:suite) hook is reported after the failure count, with the
+  // count itself at zero.
+  const rspec = /^\s*\d+ examples?, (\d+) failures?(?:, (\d+) errors? occurred outside of examples)?/m.exec(tail);
+  if (rspec) return Number(rspec[1]) > 0 || Number(rspec[2] || 0) > 0 ? "fail" : "pass";
   const minitest = /^\s*\d+ runs?, \d+ assertions?, (\d+) failures?, (\d+) errors?/m.exec(tail);
   if (minitest) return Number(minitest[1]) > 0 || Number(minitest[2]) > 0 ? "fail" : "pass";
   if (/^FAILURES!/m.test(tail)) return "fail";
@@ -163,7 +170,9 @@ export function checkSummary(output) {
   const playwrightFail = /^\s+\d+ failed\b/m.test(tail);
   if (playwrightFail || /^\s+\d+ passed \([\d.]+m?s\)\s*$/m.test(tail)) return playwrightFail ? "fail" : "pass";
   // Last: a compile error under no runner summary is a failed check, not a quiet pass.
-  if (/^error(?:\[E\d+\])?: /m.test(tail)) return "fail";
+  // rustc's numbered diagnostic or cargo's closing line, never a bare "error:", which git,
+  // curl and every shell script print too and which would then be quoted as a failed check.
+  if (/^error\[E\d+\]: /m.test(tail) || /^error: could not compile /m.test(tail)) return "fail";
   if (/^\S+\.go:\d+:\d+: /m.test(tail)) return "fail";
   return undefined;
 }
