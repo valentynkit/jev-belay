@@ -1,10 +1,41 @@
 {
   "name": "jev-belay",
   "description": "Stop hook that blocks an unverified done: reads the turn's evidence, then asks Jev once",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": {
     "name": "valentynkit"
   },
   "homepage": "https://github.com/valentynkit/jev-belay",
-  "license": "MIT"
+  "license": "MIT",
+  "userConfig": {
+    "typesafe_api_key": {
+      "type": "string",
+      "title": "TypeSafe API key",
+      "description": "Without a key the hook reads nothing and blocks nothing, so this is the one setting it needs.",
+      "sensitive": true
+    },
+    "threshold": {
+      "type": "number",
+      "title": "claims_done threshold",
+      "description": "How sure Jev has to be that the turn reported the work as done before a stop is blocked.",
+      "default": 0.65
+    },
+    "log": {
+      "type": "boolean",
+      "title": "Decision log",
+      "description": "Write ~/.claude/belay/decisions.jsonl for watch and stats",
+      "default": false
+    },
+    "shadow": {
+      "type": "boolean",
+      "title": "Shadow mode",
+      "description": "Show what would have been blocked without blocking",
+      "default": false
+    },
+    "check": {
+      "type": "string",
+      "title": "Own check command",
+      "description": "A regex for a check script the built-in list does not know, e.g. ^\\./check\\.sh"
+    }
+  }
 }
