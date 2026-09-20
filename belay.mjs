@@ -85,7 +85,24 @@ export function redact(text, home = homedir()) {
 // Belt 1: does the command text name a test, build, or lint runner?
 // Verbatim from pi-warden src/done.ts:12.
 
-export const CHECK_COMMAND = /\b(?:(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:test|check|lint|typecheck|build|verify|ci)\b|(?:npx|pnpm|bunx)\s+(?:tsc|jest|vitest|mocha|eslint|biome|prettier\s+--check)\b|pytest|jest|vitest|mocha|tsc|eslint|biome\s+check|ruff|mypy|flake8|pylint|black\s+--check|cargo\s+(?:test|check|build|clippy)|go\s+(?:test|vet|build)|make\s+(?:test|check|lint|build)|mvn\s+(?:test|verify)|gradle\w*\s+(?:test|check|build)|dotnet\s+(?:test|build)|node\s+--test|deno\s+(?:test|check|lint)|rspec|rake\s+test|mix\s+test|phpunit|swift\s+(?:test|build)|xcodebuild\s+test|ctest|zig\s+(?:test|build))\b/;
+export const CHECK_COMMAND = /\b(?:(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:test|check|lint|typecheck|build|verify|ci)\b|(?:npx|pnpm|bunx)\s+(?:tsc|jest|vitest|mocha|eslint|biome|prettier\s+--check)\b|pytest|jest|vitest|mocha|tsc|eslint|biome\s+check|ruff|mypy|flake8|pylint|black\s+--check|cargo\s+(?:test|check|build|clippy|nextest)|go\s+(?:test|vet|build)|make\s+(?:test|check|lint|build)|mvn\s+(?:test|verify)|gradle\w*\s+(?:test|check|build)|dotnet\s+(?:test|build)|node\s+--test|deno\s+(?:test|check|lint)|rspec|rake\s+test|mix\s+test|phpunit|swift\s+(?:test|build)|xcodebuild\s+test|ctest|zig\s+(?:test|build))\b/;
+
+let extraPattern;
+
+/**
+ * The project's own check script, named by the CHECK option as a regex over the command.
+ * A broken regex is ignored rather than thrown: this is a hook, and it fails open.
+ */
+function extraCheck() {
+  if (extraPattern === undefined) {
+    const source = option(process.env, "CHECK", "JEV_BELAY_CHECK");
+    try { extraPattern = source ? new RegExp(source) : null; } catch { extraPattern = null; }
+  }
+  return extraPattern;
+}
+
+// Exported because the hook reads the option once per process and a test needs several.
+export function resetExtraCheck() { extraPattern = undefined; }
 
 /**
  * Belt 2: a runner launched from inside a script leaves no runner name in the command,
@@ -166,7 +183,8 @@ export function classifyToolResult(tool, input = {}, failed = false, output = ""
   if (MUTATING_TOOLS.has(tool)) return "mutation";
   const command = typeof input.command === "string" ? input.command : "";
   const summary = checkSummary(output);
-  if (tool === "Bash" && CHECK_COMMAND.test(command)) return failed || summary === "fail" ? "check-fail" : "check-pass";
+  const named = CHECK_COMMAND.test(command) || extraCheck()?.test(command) === true;
+  if (tool === "Bash" && named) return failed || summary === "fail" ? "check-fail" : "check-pass";
   if (summary) return summary === "fail" || failed ? "check-fail" : "check-pass";
   return "unknown";
 }
