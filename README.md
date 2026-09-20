@@ -61,12 +61,10 @@ Measured over the 96 fresh calls of the ablation run, direct API, `jev-1.13.0`:
 |---|---|
 | Jev calls | 1, four questions in it |
 | input tokens | 1,181 median, 686 to 1,849 |
-| cost | $0.00005 at $0.042 per million; output is free |
+| cost | $0.00005 at $0.042 per million, output free. A thousand checks cost five cents |
 | latency | 344 ms median, 433 ms p90, 276 ms best, end to end from the hook |
 | stops that reach it | 16.6% (413 of 2,491 stops in one real corpus) |
 | stops that do not | a transcript read, no network |
-
-A thousand checks cost five cents. The other 83% of turns cost nothing.
 
 ## Install
 
@@ -77,27 +75,48 @@ As a plugin:
 /plugin install jev-belay@jev-belay
 ```
 
-Or by hand in `~/.claude/settings.json`:
+Claude Code asks for your TypeSafe key when it enables the plugin and keeps it in the
+Keychain; threshold, decision log, shadow mode and your own check command are asked at the
+same time and change in `/config`. That replaces the old `.env` step, which never worked:
+nothing in the hook reads a `.env` file.
+
+Or by hand in `~/.claude/settings.json`. The hook reads the environment and nothing else,
+so the key goes in an `env` block beside the hook line:
 
 ```json
-{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"node ~/src/jev-belay/belay.mjs","timeout":25}]}]}}
+{ "env": { "TYPESAFE_API_KEY": "sk-..." },
+  "hooks": { "Stop": [{ "hooks": [{ "type": "command", "command": "node ~/src/jev-belay/belay.mjs", "timeout": 25 }] }] } }
 ```
 
-Then `cp .env.example .env` and set a key.
+| variable | plugin option | required | purpose |
+|---|---|---|---|
+| `TYPESAFE_API_KEY` | `typesafe_api_key` | yes | the Jev key. Without it the hook exits 0 and does nothing |
+| `JEV_API_KEY` | `typesafe_api_key` | no | accepted as an alternative name for the same key |
+| `JEV_BASE_URL` | none | no | point at a shim or at `tools/fake-jev.mjs` instead |
+| `JEV_BELAY_THRESHOLD` | `threshold` | no | `claims_done` cutoff, default 0.65, swept |
+| `JEV_BELAY_LOG` | `log` | no | `1` writes `~/.claude/belay/decisions.jsonl` for the live view |
+| `JEV_BELAY_SHADOW` | `shadow` | no | `1` reports what it would have blocked and lets the turn end |
+| `JEV_BELAY_CHECK` | `check` | no | a regex for your own check command, read by belt 1 |
+| `JEV_BELAY_TIMEOUT_MS` | none | no | whole-call budget including retries, default 20000 |
+| `JEV_BELAY_DEBUG` | none | no | `1` prints why the hook did what it did, on stderr |
+| `JEV_MODEL` | none | no | pinned to `jev-1.13.0`, because aliases move |
 
-| variable | required | purpose |
-|---|---|---|
-| `TYPESAFE_API_KEY` | yes | the Jev key. Without it the hook exits 0 and does nothing |
-| `JEV_API_KEY` | no | accepted as an alternative name for the same key |
-| `JEV_BASE_URL` | no | point at a shim or at `tools/fake-jev.mjs` instead |
-| `JEV_BELAY_THRESHOLD` | no | `claims_done` cutoff, default 0.65, swept |
-| `JEV_BELAY_LOG` | no | `1` writes `~/.claude/belay/decisions.jsonl` for the live view |
-| `JEV_BELAY_TIMEOUT_MS` | no | whole-call budget including retries, default 20000 |
-| `JEV_BELAY_DEBUG` | no | `1` prints why the hook did what it did, on stderr |
-| `JEV_MODEL` | no | pinned to `jev-1.13.0`, because aliases move |
+The plugin hands each option to the hook as `CLAUDE_PLUGIN_OPTION_<NAME>`, which wins over
+the plain variable. Requirements: Node 20+, and Claude Code 2.1.196 or newer for
+`prompt_id` and the closing message on the Stop payload. Older versions fall back to a
+session-keyed guard and a transcript re-read, one extra possible block per session.
 
-Requirements: Node 20+, Claude Code 2.1.196 or newer for `prompt_id`. Older versions fall
-back to a session-keyed guard, at the cost of one extra possible block per session.
+## Try it in 30 seconds without a key
+
+```
+node tools/fake-jev.mjs --port 4321 &
+JEV_BASE_URL=http://127.0.0.1:4321 node belay.mjs < test/stop-blocked.json; echo $?
+echo 'not json' | node belay.mjs; echo $?
+node belay.mjs --replay demo/sample-decisions.jsonl
+```
+
+The first prints the reason Claude would get and exits 2, the code that blocks a stop. The
+second exits 0: an unreadable payload is a turn it lets end. The third opens the live view.
 
 ## What you see
 
@@ -115,8 +134,8 @@ Claude reads that and keeps working. Blocks are capped at one per prompt, none w
 seconds of the last, three per session, so a hook that is wrong about a turn costs you one
 extra test run, not a loop.
 
-With `JEV_BELAY_LOG=1` there is a live view of every decision as it lands, and every stop
-the gate let through on a passing check, which says so and costs nothing:
+With the decision log on (`log`, or `JEV_BELAY_LOG=1`) there is a live view of every
+decision as it lands, including every stop the gate let through on a passing check:
 
 ```
 node belay.mjs watch                              --wide for 120 columns, --pace 0 for no fill
@@ -129,6 +148,23 @@ Red pushes toward a block, green toward allowed, dim is the 0.30 to 0.70 dead ba
 `claims checks passed` is the one that flips sides: honest when a check did pass, a lie
 when none ran.
 
+```
+node belay.mjs stats                              verdicts, calls, cost, latency, the last 14 days
+node belay.mjs last                               the last decision, rendered in full
+```
+
+Shadow mode (`shadow`, or `JEV_BELAY_SHADOW=1`) runs the whole pipeline and still lets the
+turn end. A turn it would have blocked prints one line to you, `jev-belay would have
+blocked this turn:` and the reason; Claude sees none of it. The block counts against the
+caps either way, so switching shadow off later changes nothing about loop safety. Run it a
+week, read the stats, switch it off when you believe the verdicts.
+
+## Skills
+
+`/jev-belay:why` reads the last decision and says why that stop was blocked or allowed.
+
+`/jev-belay:doctor` runs the install checks and names the fix for anything that failed.
+
 ## How it decides
 
 ```
@@ -136,10 +172,11 @@ Stop payload on stdin
   ├─ stop_hook_active, already blocked here, or over the session cap -> exit 0
   ├─ no key -> exit 0
   ├─ read the transcript slice since your last prompt        [local, free]
-  │    belt 1: a runner named in the command text
+  │    subagent transcripts next to the session fold into the turn
+  │    belt 1: a runner named in the command, plus your own check regex
   │    belt 2: a runner's own summary in the output
   ├─ nothing changed, or a check passed after the last change -> exit 0
-  ├─ read it again 300 ms later: the closing message lands after Stop fires
+  ├─ the closing message: off the Stop payload, or a re-read 300 ms later on older hosts
   ├─ one Jev call, four questions
   └─ decide() -> block: exit 2 with a reason, or exit 0
 ```
@@ -155,6 +192,8 @@ The four questions, wording borrowed from pi-warden's `src/done.ts`:
 
 Code owns the transcript walk, the counting, every threshold, the timeouts and the dedup.
 Jev owns one judgment.
+
+## What leaves your machine
 
 This is the whole request, captured off the wire from a real session:
 
@@ -184,7 +223,7 @@ nothing ran. Answers from `jev-1.13.0` on the direct API, 2026-09-19.
 
 The ablation asks one thing: does giving the judge the run facts beat judging the
 sentence alone. Three arms, each adding one piece of the hook, AUROC with a bootstrap 95%
-interval:
+interval: <!-- remeasure -->
 
 | arm | AUROC | 95% interval |
 |---|---|---|
@@ -196,7 +235,7 @@ On the 78 stops that reach the gate, where the decision is actually made, the sh
 scores 0.953 against 0.767 for the wording alone. The project's own bar was 0.60 and +0.08
 over the wording; it cleared by +0.236.
 
-The threshold sweep, on the same 100 stops, picks the `claims_done` cutoff:
+The threshold sweep, on the same 100 stops, picks the `claims_done` cutoff: <!-- remeasure -->
 
 | threshold | blocks | false dones caught (of 12) | wrong blocks |
 |---|---|---|---|
@@ -215,7 +254,7 @@ between two neighbouring thresholds is one stop. The shape of the result is not 
 the second decimal is. `npm run measure -- --ablation` and `--sweep` reproduce every
 number above on your own corpus, and print the interval next to each one.
 
-Other measured facts, same corpus: 16.6% of all stops reach the question (413 of 2,491);
+Other measured facts, same corpus: 16.6% of all stops reach the question (413 of 2,491); <!-- remeasure -->
 a keyword pre-screen on the closing message catches 41.7% of false dones, which is why
 there is no pre-screen.
 
@@ -224,12 +263,11 @@ there is no pre-screen.
 - One turn. A false done spread over three turns reads as three separate stops.
 - A turn with no file edits never reaches the question. A read-only "confirmed, tests
   pass" passes through untouched.
-- Work done by a subagent is invisible. Claude Code writes it to a separate transcript
-  that the hook never opens, so a turn that delegated the edits looks like one that
-  changed nothing.
-- Needs a recognisable runner. A bespoke `./check.sh` counts only if its output carries a
-  summary from a runner belt 2 knows: jest, vitest, bun, `node --test`, pytest, cargo, go,
-  mix, dotnet, gradle, maven, eslint, tsc.
+- Your own check script is invisible unless you name it in the `check` option. Without it,
+  a `./check.sh` counts only when its output carries a summary belt 2 knows: jest, vitest,
+  bun, node --test, mocha, playwright, pytest, ruff, mypy, cargo, nextest, go, deno, mix,
+  dotnet, gradle, maven, rspec, minitest, phpunit, swift, ctest, eslint, biome, tsc, and
+  the rustc and go compiler error shapes.
 - One of four thresholds has a sweep behind it (`claims_done` at 0.65). The 0.5 on
   `verification_applies`, the 0.7 on `claims_verified` and the 0.4 floor under `outcome`
   are reasoned, not measured.
@@ -238,10 +276,27 @@ there is no pre-screen.
 - Every error path exits 0. A hook that blocks by accident costs more trust than one that
   misses a case.
 
+## FAQ
+
+**Does it loop?** One block per prompt, never a second within 60 seconds, three per session.
+Claude Code caps it again from outside: after 8 consecutive blocks the host ends the turn.
+
+**How do I turn it off?** Disable the plugin, or clear the key. Without a key the hook exits
+0 before it reads a thing, the same as it does on a network failure or a garbage answer.
+
+**It does not know my test command.** Set the `check` option, or `JEV_BELAY_CHECK`, to a
+regex matching the command you run: `^\./check\.sh`, `\bmake verify\b`. Belt 1 tests it
+next to the built-in runners, so a passing run of your own script ends the turn for free.
+
+**What about subagents?** Folded in since 0.2.0. The hook reads the `subagents/` files next
+to the session transcript, keeps the ones carrying this turn's prompt id, and merges them
+in by timestamp, so the edits and checks a delegate made count as the turn's own.
+
 ## Development
 
 ```
 npm test                                   offline, no key, against tools/fake-jev.mjs
+node belay.mjs doctor                      key, host version, hook registration, a round trip
 node tools/extract-corpus.mjs --out corpus --gate     your own transcripts -> a redacted projection
 node tools/label.mjs --proxy               or without --proxy to label by hand
 npm run measure                            headline line + measure.json
@@ -251,8 +306,7 @@ demo/take-vhs.sh                           re-record the clip, headless, about t
 ```
 
 `corpus/` is gitignored apart from the rubric and eight synthetic stops. It is built from
-your own transcripts and stays on your machine; `CONTRIBUTING.md` has the rules that
-follow from that.
+your own transcripts and stays there; `CONTRIBUTING.md` has the rules that follow.
 
 ## Credits
 
