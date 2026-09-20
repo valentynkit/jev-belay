@@ -13,5 +13,6 @@ The last decision jev-belay recorded:
 Read the record above and tell the user in two sentences why that stop was blocked,
 allowed, passed, or shadowed. Quote the check on the `ran` line, or say plainly that none
 ran. Finish with the single command to run next, which is usually the project's test or
-build command. If the record says there is no decision log, say the log is off and that
-setting `JEV_BELAY_LOG=1` in the environment Claude Code runs in turns it on.
+build command. If the record says there is no decision log, say the log is off and that the
+plugin's `log` option in /config, or `JEV_BELAY_LOG=1` in the environment Claude Code
+runs in, turns it on.
