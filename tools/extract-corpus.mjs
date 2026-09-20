@@ -34,6 +34,28 @@ export function transcriptFiles(root) {
 }
 
 /**
+ * Every subagent file beside a transcript, grouped by the parent prompt that spawned it.
+ * A delegated turn's edits live only here, and without them the projection says a turn
+ * that rewrote six files changed nothing.
+ */
+export function subagentsByPrompt(path) {
+  const byPrompt = new Map();
+  const dir = `${path.replace(/\.jsonl$/, "")}/subagents`;
+  let names;
+  try { names = readdirSync(dir); } catch { return byPrompt; }
+  for (const name of names) {
+    if (!name.startsWith("agent-") || !name.endsWith(".jsonl")) continue;
+    try {
+      const lines = parseJsonl(readFileSync(join(dir, name), "utf8")).map((line) => ({ ...line, isSidechain: false }));
+      // Assistant lines carry a null promptId, so the first id in the file is the owner.
+      const owner = lines.find((line) => typeof line.promptId === "string")?.promptId;
+      if (owner) byPrompt.set(owner, [...(byPrompt.get(owner) || []), ...lines]);
+    } catch { /* a half-written agent file is not a corpus problem */ }
+  }
+  return byPrompt;
+}
+
+/**
  * One stop per turn: the projection of the fields the questions read, nothing else.
  *
  * The id is the hash of the projected text, not the turn's position. A position is not an
@@ -46,7 +68,7 @@ export function projectFile(path) {
   const source = createHash("sha256").update(path).digest("hex").slice(0, 12);
   const seen = new Set();
   const out = [];
-  for (const turn of turnsOf(records)) {
+  for (const turn of turnsOf(records, undefined, subagentsByPrompt(path))) {
     if (!turn.finalMessage) continue; // the turn never ended with an assistant message
     if (turn.task.includes(OPT_OUT) || turn.finalMessage.includes(OPT_OUT)) continue;
     const state = buildState(turn.task, turn.finalMessage, turn);

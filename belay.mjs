@@ -9,7 +9,7 @@
 // The transcript never leaves the machine: state is the user's task, the final assistant
 // message, and counts derived from tool calls. No tool inputs, no diffs, no file contents.
 
-import { appendFileSync, closeSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, closeSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -215,8 +215,8 @@ export function freshChecks(evidence) {
   return evidence.checks.slice(evidence.checksBeforeMutation ?? 0);
 }
 
-/** Every turn in a transcript, as {task, finalMessage, mutations, checks, ...}. */
-export function turnsOf(records, home = homedir()) {
+/** A transcript as turns: each user prompt and every line after it. */
+function splitTurns(records) {
   const turns = [];
   let current = null;
   for (const line of records) {
@@ -228,7 +228,20 @@ export function turnsOf(records, home = homedir()) {
     if (current) current.lines.push(line);
   }
   if (current) turns.push(current);
-  return turns.map((t) => ({ task: t.task, promptId: t.promptId, ...evidenceFromTurn(t.lines, home) }));
+  return turns;
+}
+
+/**
+ * Every turn in a transcript, as {task, finalMessage, mutations, checks, ...}.
+ * `subagents` maps a promptId to the lines its delegated agents wrote, so a caller walking
+ * a whole file folds them in the same way a single stop does.
+ */
+export function turnsOf(records, home = homedir(), subagents) {
+  return splitTurns(records).map((t) => ({
+    task: t.task,
+    promptId: t.promptId,
+    ...evidenceFromTurn(foldSubagents(t.lines, subagents?.get(t.promptId)), home),
+  }));
 }
 
 // A transcript grows without bound and a few pasted tool outputs can make it tens of MB,
@@ -249,6 +262,56 @@ function readTail(path) {
   } finally { closeSync(fd); }
 }
 
+// A delegated turn writes its own transcript beside the parent's, one file per agent, and
+// all the parent keeps of the work is a Task result. In sessions that delegate, a fifth of
+// the edited turns were edited by nobody the parent can see.
+const AGENT_HEAD_BYTES = 4096;
+
+function readHead(path, bytes = AGENT_HEAD_BYTES) {
+  const fd = openSync(path, "r");
+  try {
+    const buf = Buffer.alloc(bytes);
+    return buf.subarray(0, readSync(fd, buf, 0, bytes, 0)).toString("utf8");
+  } finally { closeSync(fd); }
+}
+
+/** The lines every subagent of one parent prompt wrote, as lines of the parent's turn. */
+export function subagentLines(transcriptPath, promptId) {
+  if (!promptId) return [];
+  const dir = `${String(transcriptPath).replace(/\.jsonl$/, "")}/subagents`;
+  let names;
+  try { names = readdirSync(dir); } catch { return []; } // most sessions delegate nothing
+  const lines = [];
+  for (const name of names) {
+    if (!name.startsWith("agent-") || !name.endsWith(".jsonl")) continue;
+    try {
+      // Only user lines in an agent file carry the parent's promptId, assistant lines carry
+      // null, so the first id in the file is the one that says whose work this is.
+      if (/"promptId":"([^"]+)"/.exec(readHead(join(dir, name)))?.[1] !== promptId) continue;
+      for (const line of parseJsonl(readTail(join(dir, name)).text)) lines.push({ ...line, isSidechain: false });
+    } catch { /* a half-written agent file is not the parent's problem */ }
+  }
+  return lines;
+}
+
+/**
+ * Two ordered streams into one. Order is the whole point: a subagent's edit before the
+ * parent's test run leaves the run fresh, and the same two the other way round do not.
+ */
+function foldSubagents(lines, extra) {
+  if (!extra?.length) return lines;
+  const at = (line) => line.timestamp || "\uffff"; // an undated line sorts after the dated ones
+  const sorted = [...extra].sort((a, b) => (at(a) < at(b) ? -1 : at(a) > at(b) ? 1 : 0));
+  const merged = [];
+  let i = 0;
+  for (const line of lines) {
+    const here = line.timestamp || "";
+    while (i < sorted.length && at(sorted[i]) < here) merged.push(sorted[i++]);
+    merged.push(line);
+  }
+  return [...merged, ...sorted.slice(i)];
+}
+
 /**
  * The transcript's own home, so a hook running under a different $HOME still rewrites the
  * paths in the text it sends. Claude Code stores transcripts at <home>/.claude/projects/.
@@ -263,9 +326,10 @@ export function readEvidence(transcriptPath) {
   const { text, whole } = readTail(transcriptPath);
   let records = parseJsonl(text);
   if (!whole && !records.some(isUserPrompt)) records = parseJsonl(readFileSync(transcriptPath, "utf8"));
-  const turns = turnsOf(records, home);
-  const last = turns.at(-1) || { task: "", finalMessage: "", mutations: 0, checks: [], checksBeforeMutation: 0 };
-  return { ...last, home, lineCount: records.length };
+  const last = splitTurns(records).at(-1);
+  if (!last) return { task: "", finalMessage: "", mutations: 0, checks: [], checksBeforeMutation: 0, home, lineCount: records.length };
+  const lines = foldSubagents(last.lines, subagentLines(transcriptPath, last.promptId));
+  return { task: last.task, promptId: last.promptId, ...evidenceFromTurn(lines, home), home, lineCount: records.length };
 }
 
 // ---------------------------------------------------------------------------

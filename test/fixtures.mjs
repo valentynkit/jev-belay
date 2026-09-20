@@ -1,15 +1,23 @@
 // Transcript builder for the tests: the same jsonl shape Claude Code writes, minus the
 // fields no code path reads.
 
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 let counter = 0;
 
+// One clock for the whole process, a second per line, so a subagent step written between
+// two parent steps carries timestamps that fall between theirs.
+let clock = 0;
+const stamp = () => new Date(Date.parse("2026-09-20T12:00:00.000Z") + ++clock * 1000).toISOString();
+
 /**
- * steps: {prompt} | {text} | {slash} | {tool, input, stdout, isError}
- * A tool step writes both the assistant tool_use line and the user tool_result line.
+ * steps: {prompt} | {text} | {slash} | {tool, input, stdout, isError} | {agent, promptId}
+ * A tool step writes both the assistant tool_use line and the user tool_result line. An
+ * agent step writes its steps to a sibling subagent file instead of into the transcript,
+ * which is where Claude Code puts a delegated turn; the file lands on `lines.agents` and
+ * `transcriptFile` writes it out.
  *
  * `is_error` is written only when the step asks for it, because that is what Claude Code
  * does: a test runner exiting nonzero leaves no is_error and no exit code anywhere in the
@@ -17,39 +25,72 @@ let counter = 0;
  */
 export function transcript(steps) {
   const lines = [];
+  const agents = [];
+  let prompt;
   for (const step of steps) {
     if (step.prompt !== undefined) {
-      lines.push({ type: "user", promptId: `p${++counter}`, message: { role: "user", content: [{ type: "text", text: step.prompt }] } });
+      prompt = `p${++counter}`;
+      lines.push({ type: "user", promptId: prompt, timestamp: stamp(), message: { role: "user", content: [{ type: "text", text: step.prompt }] } });
       continue;
     }
     // A slash command is logged as a real user line, with a promptId and a bare string body.
     if (step.slash !== undefined) {
-      lines.push({ type: "user", promptId: `p${++counter}`, userType: "external", message: { role: "user", content: `<command-name>${step.slash}</command-name>\n<command-message>${step.slash}</command-message>` } });
-      lines.push({ type: "user", promptId: `p${++counter}`, userType: "external", message: { role: "user", content: `<local-command-stdout>${step.stdout || ""}</local-command-stdout>` } });
+      lines.push({ type: "user", promptId: `p${++counter}`, timestamp: stamp(), userType: "external", message: { role: "user", content: `<command-name>${step.slash}</command-name>\n<command-message>${step.slash}</command-message>` } });
+      lines.push({ type: "user", promptId: `p${++counter}`, timestamp: stamp(), userType: "external", message: { role: "user", content: `<local-command-stdout>${step.stdout || ""}</local-command-stdout>` } });
       continue;
     }
     if (step.text !== undefined) {
-      lines.push({ type: "assistant", message: { role: "assistant", stop_reason: "end_turn", content: [{ type: "text", text: step.text }] } });
+      lines.push({ type: "assistant", timestamp: stamp(), message: { role: "assistant", stop_reason: "end_turn", content: [{ type: "text", text: step.text }] } });
+      continue;
+    }
+    if (step.agent !== undefined) {
+      // The parent's whole record of a delegated turn: a Task call, and a result once the
+      // agent is done. Everything in between is in the agent's own file.
+      const task = `t${++counter}`;
+      lines.push({ type: "assistant", timestamp: stamp(), message: { role: "assistant", stop_reason: "tool_use", content: [{ type: "tool_use", id: task, name: "Task", input: { description: "delegated" } }] } });
+      // In an agent file the user lines carry the parent's promptId and the assistant lines
+      // carry null, so the first user line is the only thing that names the owner.
+      const owner = step.promptId ?? prompt;
+      agents.push([
+        { type: "user", promptId: owner, isSidechain: true, timestamp: stamp(), message: { role: "user", content: [{ type: "text", text: "delegated task" }] } },
+        ...transcript(step.agent).map((l) => ({ ...l, isSidechain: true, promptId: l.type === "user" ? owner : null })),
+      ]);
+      lines.push({
+        type: "user",
+        timestamp: stamp(),
+        message: { role: "user", content: [{ type: "tool_result", tool_use_id: task }] },
+        toolUseResult: { stdout: step.stdout || "delegated work finished", stderr: "", interrupted: false, isImage: false, noOutputExpected: false },
+      });
       continue;
     }
     const id = `t${++counter}`;
     const result = { type: "tool_result", tool_use_id: id };
     if (step.isError) result.is_error = true;
-    lines.push({ type: "assistant", message: { role: "assistant", stop_reason: "tool_use", content: [{ type: "tool_use", id, name: step.tool, input: step.input || {} }] } });
+    lines.push({ type: "assistant", timestamp: stamp(), message: { role: "assistant", stop_reason: "tool_use", content: [{ type: "tool_use", id, name: step.tool, input: step.input || {} }] } });
     lines.push({
       type: "user",
+      timestamp: stamp(),
       message: { role: "user", content: [result] },
       toolUseResult: { stdout: step.stdout || "", stderr: "", interrupted: false, isImage: false, noOutputExpected: false },
     });
   }
+  lines.agents = agents;
   return lines;
 }
 
-/** Write a transcript to a temp file and return its path. */
+const jsonl = (lines) => lines.map((l) => JSON.stringify(l)).join("\n") + "\n";
+
+/** Write a transcript, and any subagent files it declared, and return the transcript path. */
 export function transcriptFile(steps) {
   const dir = mkdtempSync(join(tmpdir(), "belay-"));
   const path = join(dir, "session.jsonl");
-  writeFileSync(path, transcript(steps).map((l) => JSON.stringify(l)).join("\n") + "\n");
+  const lines = transcript(steps);
+  writeFileSync(path, jsonl(lines));
+  if (lines.agents.length) {
+    const subagents = join(dir, "session", "subagents");
+    mkdirSync(subagents, { recursive: true });
+    lines.agents.forEach((agent, n) => writeFileSync(join(subagents, `agent-${n + 1}.jsonl`), jsonl(agent)));
+  }
   return path;
 }
 
