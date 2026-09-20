@@ -4,13 +4,65 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), versions follow
 [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [0.2.0] - 2026-09-20
+
+### Added
+
+- The plugin asks for its settings when it is enabled: the TypeSafe key (kept in the
+  Keychain), the `claims_done` threshold, the decision log, shadow mode, and a regex for
+  your own check command. Each arrives as `CLAUDE_PLUGIN_OPTION_<NAME>` and wins over the
+  plain environment variable.
+- Subagent work counts. The hook reads the `subagents/` files next to the session
+  transcript, keeps the ones carrying this turn's prompt id, and merges them into the turn
+  by timestamp, so a turn that delegated its edits no longer looks like one that changed
+  nothing.
+- Shadow mode: the whole pipeline runs, the turn still ends, and a stop it would have
+  blocked prints `jev-belay would have blocked this turn:` and the reason through
+  `systemMessage`, which Claude Code shows to you and not to the model.
+- The closing message is read from the Stop payload's `last_assistant_message` when the
+  host sends it, so the 300 ms re-read is paid only on older hosts.
+- `belay.mjs stats` (verdict counts, calls, cost, latency p50 and p90, the last 14 days),
+  `belay.mjs last` (the last decision, rendered), and `belay.mjs doctor` (key, host
+  version, hook registration, transcripts readable, a round trip through a fake; `--live`
+  makes one real call).
+- Two skills: `/jev-belay:why` explains the last decision, `/jev-belay:doctor` reads the
+  doctor's output back and names the fix for anything that failed.
+- Belt 2 reads nextest, deno, ruff, mypy, mocha, rspec, minitest, phpunit, playwright,
+  swift, ctest and biome summaries, plus two compiler shapes, rustc's `error[E0119]:` and
+  go's `file.go:12:3:`, which decide fail when no runner summary follows them. A compile
+  error used to read as a passing check in a `cargo check` or a `go build`.
+- `test/runners/` holds a captured or documented output per runner belt 2 claims to know,
+  passing and failing, so a belt change has something to fail against.
+- A check command of your own: set the `check` option (or `JEV_BELAY_CHECK`) to a regex
+  and belt 1 tests it next to the built-in runners. An invalid regex is ignored.
+
+### Changed
+
+- `tui.mjs` holds the live view, the replay, `stats`, `last` and `doctor`. `belay.mjs` is
+  the hook and imports it lazily, so the hook path never parses the TUI.
+- `.env.example` is gone. Nothing ever read it, and the README told people to copy it.
+
+### Fixed
+
+- The plugin install never delivered a key. The README pointed at a `.env` file that
+  neither the hook nor Claude Code reads, so a plugin user got "no key", exit 0, forever,
+  with nothing saying so.
+- A compile error in a `cargo check` or a `go build` read as a passing check, which sent
+  Jev a state saying a check passed and put the same claim in the nudge.
+
+### Measured
+
+- Re-measured after the gate change: <!-- remeasure -->
+
+## [0.1.1] - 2026-09-19
 
 ### Changed
 
 - The `claims_done` threshold is 0.65, down from 0.75: the sweep over 100 labeled stops
   answered by `jev-1.13.0` picks the lowest cutoff that keeps wrong blocks under 2%, and
   0.65 catches one more false done than 0.75 at the same one wrong block.
+- A corpus record's id is the hash of its projected text rather than its position in the
+  file, so a label follows the stop it describes.
 
 ### Measured
 
@@ -54,11 +106,6 @@ All notable changes to this project are documented here. Format follows
   stops that reach the gate, next to the one that includes those it zeroes.
 - `CONTRIBUTING.md`, and a GitHub Actions workflow running the suite offline on Node 20
   and 22.
-
-### Changed
-
-- A corpus record's id is the hash of its projected text rather than its position in the
-  file, so a label follows the stop it describes.
 
 ## [0.1.0] - 2026-09-18
 
