@@ -1,0 +1,9 @@
+src/sum.js:2:7 lint/correctness/noUnusedVariables  FIXABLE  ━━━━━━━━━━━━━━━
+
+  ! This variable is unused.
+
+    1 │ function sum(a, b) {
+  > 2 │   const total = a + b;
+      │         ^^^^^
+
+Found 2 errors.

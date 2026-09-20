@@ -1,0 +1,17 @@
+    Checking belaycap v0.1.0 (/private/tmp/belaycap/rs)
+error: writing `&Vec` instead of `&[_]` involves a new object where a slice will do
+ --> src/lib.rs:5:21
+  |
+5 | pub fn first(items: &Vec<i32>) -> i32 {
+  |                     ^^^^^^^^^
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#ptr_arg
+  = note: `-D clippy::ptr-arg` implied by `-D warnings`
+  = help: to override `-D warnings` add `#[allow(clippy::ptr_arg)]`
+help: change this to
+  |
+5 - pub fn first(items: &Vec<i32>) -> i32 {
+5 + pub fn first(items: &[i32]) -> i32 {
+  |
+
+error: could not compile `belaycap` (lib) due to 1 previous error

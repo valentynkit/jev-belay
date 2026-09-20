@@ -1,0 +1,9 @@
+> Task :test FAILED
+
+SumTest > addsNegativeNumbers() FAILED
+    org.opentest4j.AssertionFailedError: expected: <1> but was: <0>
+
+FAILURE: Build failed with an exception.
+
+BUILD FAILED in 3s
+4 actionable tasks: 4 executed

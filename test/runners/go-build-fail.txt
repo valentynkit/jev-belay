@@ -1,0 +1,2 @@
+# example.com/belaycap
+./add.go:4:9: invalid operation: a + "b" (mismatched types int and untyped string)

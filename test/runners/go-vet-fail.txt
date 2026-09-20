@@ -1,0 +1,1 @@
+add.go:6:14: fmt.Printf format %d has arg "sum" of wrong type string

@@ -1,0 +1,17 @@
+FAIL  src/sum.test.js
+  sum
+    ✓ adds two numbers (2 ms)
+    ✕ adds negative numbers (3 ms)
+
+  ● sum › adds negative numbers
+
+    expect(received).toBe(expected)
+
+    Expected: 1
+    Received: 0
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 4 passed, 5 total
+Snapshots:   0 total
+Time:        1.310 s
+Ran all test suites.
