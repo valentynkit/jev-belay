@@ -1,0 +1,3 @@
+sum.py:2: error: Incompatible return value type (got "int", expected "str")  [return-value]
+sum.py:6: error: Argument 1 to "label" has incompatible type "str"; expected "int"  [arg-type]
+Found 2 errors in 1 file (checked 3 source files)

@@ -1,0 +1,20 @@
+F401 [*] `os` imported but unused
+ --> dirty/bad.py:1:8
+  |
+1 | import os
+  |        ^^
+2 | import sys
+  |
+help: Remove unused import: `os`
+
+F401 [*] `sys` imported but unused
+ --> dirty/bad.py:2:8
+  |
+1 | import os
+2 | import sys
+  |        ^^^
+  |
+help: Remove unused import: `sys`
+
+Found 2 errors.
+[*] 2 fixable with the `--fix` option.

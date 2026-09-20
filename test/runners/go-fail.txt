@@ -1,0 +1,5 @@
+--- FAIL: TestAdd (0.00s)
+    add_test.go:7: Add(1, 1) = 2, want 3
+FAIL
+FAIL	example.com/belaycap	0.315s
+FAIL

@@ -1,0 +1,4 @@
+/app/src/sum.js
+  3:7  warning  'total' is assigned a value but never used  no-unused-vars
+
+✖ 1 problem (0 errors, 1 warning)

@@ -1,0 +1,31 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.00s
+────────────
+ Nextest run ID 9af781df-4572-43bd-a769-0520915dc356 with nextest profile: default
+    Starting 2 tests across 1 binary
+        PASS [   0.006s] (1/2) belaycap tests::adds
+        FAIL [   0.006s] (2/2) belaycap tests::adds_negative
+  stdout ───
+
+    running 1 test
+    test tests::adds_negative ... FAILED
+
+    failures:
+
+    failures:
+        tests::adds_negative
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'tests::adds_negative' (491721) panicked at src/lib.rs:16:9:
+    assertion `left == right` failed
+      left: 0
+     right: 1
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+  Cancelling due to test failure: 
+────────────
+     Summary [   0.006s] 2 tests run: 1 passed, 1 failed, 0 skipped
+        FAIL [   0.006s] (2/2) belaycap tests::adds_negative
+error: test run failed

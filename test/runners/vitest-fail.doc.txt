@@ -1,0 +1,8 @@
+ ❯ src/sum.test.ts (5)
+   ✓ adds two numbers
+   × adds negative numbers
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 4 passed (5)
+   Start at  10:13:02
+   Duration  340ms

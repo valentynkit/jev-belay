@@ -1,0 +1,6 @@
+ ✓ src/sum.test.ts (5)
+
+ Test Files  1 passed (1)
+      Tests  5 passed (5)
+   Start at  10:12:41
+   Duration  320ms

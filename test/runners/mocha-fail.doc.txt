@@ -1,0 +1,12 @@
+  sum
+    ✓ adds two numbers
+    1) adds negative numbers
+
+
+  4 passing (12ms)
+  1 failing
+
+  1) sum
+       adds negative numbers:
+     AssertionError: expected 0 to equal 1
+      at Context.<anonymous> (test/sum.test.js:9:20)

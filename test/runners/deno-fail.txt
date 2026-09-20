@@ -1,0 +1,19 @@
+[0m[38;5;245mrunning 2 tests from ./fail.test.ts[0m
+adds ... [0m[32mok[0m [0m[38;5;245m(143µs)[0m
+wrong ... [0m[31mFAILED[0m [0m[38;5;245m(768µs)[0m
+
+[0m[1m[37m[41m ERRORS [0m
+
+wrong [0m[38;5;245m=> ./fail.test.ts:2:6[0m
+[0m[1m[31merror[0m: Error: expected 5, got 4
+Deno.test("wrong", () => { throw new Error("expected 5, got 4"); });
+[0m[31m                                 ^[0m
+    at [0m[2m[38;5;245mfile:///private/tmp/belaycap/deno/[0m[0m[36mfail.test.ts[0m:[0m[33m2[0m:[0m[33m34[0m
+
+[0m[1m[37m[41m FAILURES [0m
+
+wrong [0m[38;5;245m=> ./fail.test.ts:2:6[0m
+
+[0m[31mFAILED[0m | 1 passed | 1 failed [0m[38;5;245m(2ms)[0m
+
+[0m[1m[31merror[0m: Test failed

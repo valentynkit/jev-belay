@@ -1,0 +1,18 @@
+....F
+
+Failures:
+
+  1) Sum adds negative numbers
+     Failure/Error: expect(sum(-1, 1)).to eq(1)
+
+       expected: 1
+            got: 0
+
+     # ./spec/sum_spec.rb:9:in `block (2 levels) in <top (required)>'
+
+Finished in 0.00519 seconds (files took 0.09 seconds to load)
+5 examples, 1 failure
+
+Failed examples:
+
+rspec ./spec/sum_spec.rb:8 # Sum adds negative numbers
