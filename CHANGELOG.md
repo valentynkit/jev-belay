@@ -41,9 +41,18 @@ All notable changes to this project are documented here. Format follows
 - `tui.mjs` holds the live view, the replay, `stats`, `last` and `doctor`. `belay.mjs` is
   the hook and imports it lazily, so the hook path never parses the TUI.
 - `.env.example` is gone. Nothing ever read it, and the README told people to copy it.
+- The `claims_done` threshold is 0.70, up from 0.65: on the re-extracted corpus, with
+  subagent turns folded in, 0.70 is the lowest cutoff holding wrong blocks under 2%, and
+  it catches the same 7 of 12 false dones.
+- A check regex that matches the empty string is ignored like a broken one, since `.*`
+  would make every Bash call a passing check. An RSpec error outside the examples is a
+  failure whatever the failure count says. The rustc rule needs the numbered diagnostic or
+  cargo's closing line, so `git push` is no longer quoted as a failed check.
 
 ### Fixed
 
+- A threshold that is not a number no longer disables blocking silently; it falls back to
+  the default.
 - The plugin install never delivered a key. The README pointed at a `.env` file that
   neither the hook nor Claude Code reads, so a plugin user got "no key", exit 0, forever,
   with nothing saying so.
@@ -52,7 +61,11 @@ All notable changes to this project are documented here. Format follows
 
 ### Measured
 
-- Re-measured after the gate change: <!-- remeasure -->
+- The ablation on the re-extracted corpus (2,694 stops, 477 reaching the gate, 17.7%),
+  same 100-stop audit slice with 12 false dones, direct API, `jev-1.13.0`, 2026-09-20:
+  AUROC 0.777 for the wording alone, 0.886 with the evidence gate, 0.976 for the full
+  hook, interval 0.915 to 1.000. On the 76 gated stops: 0.967 against 0.844. At 0.70:
+  8 blocks in 100, 7 right. Median call 1,222 input tokens, $0.00005, 346 ms.
 
 ## [0.1.1] - 2026-09-19
 
