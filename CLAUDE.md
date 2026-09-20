@@ -1,7 +1,8 @@
 # jev-belay
 
 A Claude Code Stop hook that blocks an unverified "done" and fails open on everything
-else. One file (`belay.mjs`), no dependencies, Node 20+. `README.md` says what it does,
+else. The hook is `belay.mjs`; the live view and the doctor are `tui.mjs`, which the hook
+path never loads. No dependencies, Node 20+. `README.md` says what it does,
 `CONTRIBUTING.md` says how to work on it, `demo/README.md` says how the clip is recorded.
 
 Rules that are easy to break by accident:

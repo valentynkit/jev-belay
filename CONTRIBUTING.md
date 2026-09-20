@@ -14,8 +14,9 @@ If you want to reproduce anything, build your own from your own sessions:
 node tools/extract-corpus.mjs --out corpus --gate
 ```
 
-That reads `~/.claude/projects/*/*.jsonl` and writes a **projection**, not a copy. It runs
-the evidence pass at extraction time and keeps only the fields the questions read: the task,
+That reads `~/.claude/projects/*/*.jsonl`, and the `subagents/` files beside each session,
+and writes a **projection**, not a copy. It runs the evidence pass at extraction time,
+folding a turn's subagent lines in, and keeps only the fields the questions read: the task,
 the tail of the final assistant message, a count of file changes, and the check commands
 with pass or fail. Tool inputs, diffs, file contents and paths never reach disk. On top of
 that, `$HOME` becomes `~` and secret-shaped strings become `<redacted>`. A turn whose text
@@ -45,7 +46,9 @@ Two rules the suite holds itself to:
   `test/fixtures.mjs` used to set `is_error` whenever a test meant a failure. Real
   transcripts do not: a test runner exiting nonzero leaves no error flag and no exit code
   anywhere in the record. That single tidy-up hid a bug that made the whole gate a no-op.
-  If you add a fixture, check the shape against a real transcript first.
+  If you add a fixture, check the shape against a real transcript first. A runner added to
+  belt 2 brings a passing and a failing sample into `test/runners/`, captured from the
+  runner where it is installed, or copied from its documentation and marked as such.
 
 ## Changing a threshold or a question
 
