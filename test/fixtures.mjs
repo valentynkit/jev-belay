@@ -44,10 +44,10 @@ export function transcript(steps) {
       continue;
     }
     if (step.agent !== undefined) {
-      // The parent's whole record of a delegated turn: a Task call, and a result once the
+      // The parent's whole record of a delegated turn: an Agent call, and a result once the
       // agent is done. Everything in between is in the agent's own file.
       const task = `t${++counter}`;
-      lines.push({ type: "assistant", timestamp: stamp(), message: { role: "assistant", stop_reason: "tool_use", content: [{ type: "tool_use", id: task, name: "Task", input: { description: "delegated" } }] } });
+      lines.push({ type: "assistant", timestamp: stamp(), message: { role: "assistant", stop_reason: "tool_use", content: [{ type: "tool_use", id: task, name: "Agent", input: { description: "delegated", prompt: "delegated task", subagent_type: "general-purpose" } }] } });
       // In an agent file the user lines carry the parent's promptId and the assistant lines
       // carry null, so the first user line is the only thing that names the owner.
       const owner = step.promptId ?? prompt;

@@ -83,3 +83,31 @@ test("watch keeps tailing after a multibyte decision", async () => {
   assert.match(out, /café/);
   assert.match(out, /plain ascii after/, "the line after a multibyte record still renders");
 });
+
+// Shadow mode speaks through the JSON channel: exit 0, one systemMessage line on stdout
+// for the user, and nothing on stderr for the model. Its fail-open sibling: the same run
+// with garbage on stdin prints no message at all.
+test("shadow mode prints a systemMessage and exits 0", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "belay-shadow-"));
+  const server = await startFake(DEFAULT_FIXTURES);
+  try {
+    const stdin = JSON.stringify({
+      session_id: `shadow-${Math.random()}`,
+      hook_event_name: "Stop",
+      transcript_path: transcriptFile([
+        { prompt: "add a retry to the fetch helper" },
+        { tool: "Edit", input: { file_path: "/tmp/a.js" } },
+        { text: "Done. The retry is implemented and the tests pass." },
+      ]),
+    });
+    const env = { HOME: dir, JEV_BASE_URL: baseUrlOf(server), JEV_BELAY_SHADOW: "1" };
+    const r = await run(BELAY, [], { env, stdin });
+    assert.equal(r.code, 0);
+    assert.equal(r.stderr, "");
+    assert.match(JSON.parse(r.stdout).systemMessage, /^jev-belay would have blocked this turn: /);
+    const bad = await run(BELAY, [], { env, stdin: "not json" });
+    assert.deepEqual([bad.code, bad.stdout], [0, ""]);
+  } finally {
+    server.close();
+  }
+});
