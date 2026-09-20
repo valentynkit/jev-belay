@@ -263,6 +263,78 @@ test("the threshold option decides, plugin value first", async () => {
   });
 });
 
+// --- the closing message on the payload -------------------------------------
+
+test("the closing message on the payload is judged without waiting for the transcript", async () => {
+  let sent;
+  const fetchImpl = answersWith((init) => { sent = JSON.parse(init.body).state; });
+  const stdin = payload({
+    transcript_path: transcriptFile(BLOCKING.slice(0, -1)),
+    last_assistant_message: "Done. The retry is implemented and the tests pass.",
+  });
+  const started = Date.now();
+  const result = await runHook({ env: { TYPESAFE_API_KEY: "k" }, stdin, fetchImpl });
+  assert.equal(sent.final_message, "Done. The retry is implemented and the tests pass.");
+  assert.ok(Date.now() - started < 250, "the payload carried it, so there is nothing to wait for");
+  assert.equal(result.exit, 2);
+});
+
+test("fails open: the payload's closing message with an answer set with nothing in it", async () => {
+  const fetchImpl = async () => new Response(JSON.stringify({ answers: { claims_done: {} }, usage: {} }), { status: 200 });
+  const result = await runHook({
+    env: { JEV_BASE_URL: "http://x" },
+    stdin: payload({ transcript_path: transcriptFile(BLOCKING.slice(0, -1)), last_assistant_message: "Done." }),
+    fetchImpl,
+  });
+  assert.equal(result.exit, 0);
+});
+
+test("a closing message the host cut short is not the one judged", async () => {
+  let sent;
+  const fetchImpl = answersWith((init) => { sent = JSON.parse(init.body).state; });
+  const stdin = payload({
+    transcript_path: transcriptFile(BLOCKING),
+    last_assistant_message: "Done. The retry is implemented and the tests… [+4210 chars]",
+  });
+  const result = await runHook({ env: { TYPESAFE_API_KEY: "k" }, stdin, fetchImpl });
+  assert.equal(sent.final_message, "Done. The retry is implemented and the tests pass.", "the transcript holds the whole tail");
+  assert.equal(result.exit, 2);
+});
+
+// --- shadow mode ------------------------------------------------------------
+
+test("shadow reports the block it would have made instead of making it", async () => {
+  const stdin = payload({ session_id: "shadow-dedup", transcript_path: transcriptFile(BLOCKING) });
+  await withFake(DEFAULT_FIXTURES, async (env) => {
+    const shadowEnv = { ...env, JEV_BELAY_SHADOW: "true" };
+    const first = await runHook({ env: shadowEnv, stdin });
+    assert.equal(first.exit, 0);
+    assert.match(first.systemMessage, /would have blocked this turn: jev-belay: reports completion/);
+    // The caps see a shadow block, so turning shadow off later changes the verdict and
+    // nothing about how often a session can be interrupted.
+    const second = await runHook({ env: shadowEnv, stdin });
+    assert.equal(second.exit, 0);
+    assert.match(second.why, /guard/);
+  });
+});
+
+test("fails open: shadow with garbage answers says nothing at all", async () => {
+  const fetchImpl = async () => new Response(JSON.stringify({ answers: { claims_done: {} }, usage: {} }), { status: 200 });
+  const result = await runHook({
+    env: { JEV_BASE_URL: "http://x", CLAUDE_PLUGIN_OPTION_SHADOW: "true" },
+    stdin: payload({ transcript_path: transcriptFile(BLOCKING) }),
+    fetchImpl,
+  });
+  assert.equal(result.exit, 0);
+  assert.equal(result.systemMessage, undefined);
+});
+
+test("fails open: shadow with no key", async () => {
+  const result = await runHook({ env: { JEV_BELAY_SHADOW: "1" }, stdin: payload({ transcript_path: transcriptFile(BLOCKING) }) });
+  assert.equal(result.exit, 0);
+  assert.equal(result.systemMessage, undefined);
+});
+
 test("a turn that edited and truly said nothing claims nothing, so it ends", async () => {
   const silent = { ...DEFAULT_FIXTURES, claims_done: { type: "noul", noul: 0.04 } };
   const result = await withFake(silent, (env) =>

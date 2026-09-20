@@ -18,21 +18,6 @@ export const BELAY_HOME = join(homedir(), ".claude", "belay");
 export const MODEL = process.env.JEV_MODEL || "jev-1.13.0";
 
 /**
- * One setting, from the plugin's user config first and the environment second. Claude Code
- * asks for `userConfig` values when the plugin is enabled and hands each one to the hook as
- * CLAUDE_PLUGIN_OPTION_<KEY>; a manual install sets the plain variable in settings.json.
- */
-export function option(env, name, ...envNames) {
-  for (const key of [`CLAUDE_PLUGIN_OPTION_${name}`, ...envNames]) {
-    if (env[key] !== undefined && env[key] !== null && String(env[key]) !== "") return String(env[key]);
-  }
-  return undefined;
-}
-
-/** userConfig booleans arrive as "true"; a shell sets 1. Both mean on. */
-export const isOn = (value) => value === "1" || value === "true";
-
-/**
  * Whether this module is the command being run, rather than an import.
  *
  * Node resolves import.meta.url through symlinks and argv[1] arrives as written, so
@@ -619,6 +604,10 @@ const FLUSH_WAIT_MS = 300;
 
 export const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// What the host appends when it strips an oversized message out of the payload. The tail is
+// where the completion claim lives, so a cut one is worth less than the transcript's copy.
+const TRUNCATED_MESSAGE = /… \[\+\d+ chars\]$/;
+
 function readStdin() {
   return new Promise((resolve) => {
     let data = "";
@@ -658,17 +647,24 @@ export async function runHook({ env = process.env, stdin, fetchImpl = fetch } = 
     return { exit: 0, why: "gate: nothing to check" };
   }
 
-  // Claude Code fires Stop before the turn's closing message reaches the transcript,
-  // measured at about 100 ms on 2.1.263. Read again: without it the judged message is
-  // whatever the assistant said mid-turn, which on a turn that ends with tool calls is
-  // a preamble or nothing at all, and the turns this tool exists for read as silence.
-  // Only stops past the gate wait, and they are the ones about to make a network call.
-  await wait(FLUSH_WAIT_MS);
-  try {
-    const after = readEvidence(payload.transcript_path);
-    // A new prompt landing in the gap would move the slice to a turn that has not happened.
-    if (after.promptId === evidence.promptId) evidence = after;
-  } catch { /* the first read stands */ }
+  // The payload carries the closing message on hosts that have the field, and it is the
+  // same text the transcript is about to get, so take it and skip the wait below.
+  const said = typeof payload.last_assistant_message === "string" ? payload.last_assistant_message.trim() : "";
+  if (said && !TRUNCATED_MESSAGE.test(said)) {
+    evidence = { ...evidence, finalMessage: said };
+  } else {
+    // Claude Code fires Stop before the turn's closing message reaches the transcript,
+    // measured at about 100 ms on 2.1.263. Read again: without it the judged message is
+    // whatever the assistant said mid-turn, which on a turn that ends with tool calls is
+    // a preamble or nothing at all, and the turns this tool exists for read as silence.
+    // Only stops past the gate wait, and they are the ones about to make a network call.
+    await wait(FLUSH_WAIT_MS);
+    try {
+      const after = readEvidence(payload.transcript_path);
+      // A new prompt landing in the gap would move the slice to a turn that has not happened.
+      if (after.promptId === evidence.promptId) evidence = after;
+    } catch { /* the first read stands */ }
+  }
 
   const key = payload.prompt_id || evidence.promptId || `${payload.session_id}:${evidence.lineCount}`;
   const session = readSession(payload.session_id);
@@ -683,6 +679,7 @@ export async function runHook({ env = process.env, stdin, fetchImpl = fetch } = 
   }
   const verdict = decide(answer.answers, evidence, { threshold: Number(option(env, "THRESHOLD", "JEV_BELAY_THRESHOLD") || DEFAULT_THRESHOLD) });
   const reason = verdict.block ? nudge(verdict, evidence) : "";
+  const shadow = isOn(option(env, "SHADOW", "JEV_BELAY_SHADOW"));
 
   logDecision({
     ts: new Date().toISOString(),
@@ -691,7 +688,7 @@ export async function runHook({ env = process.env, stdin, fetchImpl = fetch } = 
     final_message: state.final_message,
     evidence: { mutations: evidence.mutations, checks: freshChecks(evidence) },
     answers: answer.answers,
-    verdict: verdict.block ? "blocked" : "allowed",
+    verdict: verdict.block ? (shadow ? "shadow" : "blocked") : "allowed",
     reason,
     latency_ms: answer.elapsedMs,
     usage: answer.usage || {},
@@ -699,7 +696,10 @@ export async function runHook({ env = process.env, stdin, fetchImpl = fetch } = 
   }, env);
 
   if (!verdict.block) return { exit: 0, why: "allowed" };
+  // Shadow spends the block against the caps too, so turning it off later changes the
+  // verdict and nothing about how often a session can be interrupted.
   recordBlock(payload.session_id, key);
+  if (shadow) return { exit: 0, why: "shadow: would block", systemMessage: `jev-belay would have blocked this turn: ${reason}` };
   return { exit: 2, why: "blocked", reason };
 }
 
@@ -725,6 +725,9 @@ async function main(argv) {
     process.stderr.write(`${result.reason}\n`);
     process.exit(2);
   }
+  // systemMessage goes to the user's screen and not to the model, which is what shadow
+  // mode is for: the turn ends, the person sees what would have stopped it.
+  if (result.systemMessage) process.stdout.write(`${JSON.stringify({ systemMessage: result.systemMessage })}\n`);
   if (process.env.JEV_BELAY_DEBUG === "1") process.stderr.write(`jev-belay: ${result.why}\n`);
   process.exit(0);
 }
