@@ -1,0 +1,14 @@
+Run options: --seed 9001
+
+# Running:
+
+....F
+
+Failure:
+TestSum#test_adds_negative [test/test_sum.rb:9]:
+Expected: 1
+  Actual: 0
+
+Finished in 0.001913s, 2613.7013 runs/s, 3659.1818 assertions/s.
+
+5 runs, 7 assertions, 1 failures, 0 errors, 0 skips

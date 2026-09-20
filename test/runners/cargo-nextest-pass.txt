@@ -1,0 +1,8 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.00s
+────────────
+ Nextest run ID cd68fd97-d1fe-4ca1-8605-258539610b53 with nextest profile: default
+    Starting 2 tests across 1 binary
+        PASS [   0.007s] (1/2) belaycap tests::adds_negative
+        PASS [   0.008s] (2/2) belaycap tests::adds
+────────────
+     Summary [   0.008s] 2 tests run: 2 passed, 0 skipped

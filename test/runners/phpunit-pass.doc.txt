@@ -1,0 +1,7 @@
+PHPUnit 11.3.0 by Sebastian Bergmann and contributors.
+
+.....                                                               5 / 5 (100%)
+
+Time: 00:00.004, Memory: 6.00 MB
+
+OK (5 tests, 7 assertions)

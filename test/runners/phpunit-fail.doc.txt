@@ -1,0 +1,15 @@
+PHPUnit 11.3.0 by Sebastian Bergmann and contributors.
+
+....F                                                               5 / 5 (100%)
+
+Time: 00:00.005, Memory: 6.00 MB
+
+There was 1 failure:
+
+1) SumTest::testAddsNegative
+Failed asserting that 0 matches expected 1.
+
+/app/tests/SumTest.php:14
+
+FAILURES!
+Tests: 5, Assertions: 7, Failures: 1.
