@@ -104,7 +104,7 @@ test("shadow mode prints a systemMessage and exits 0", async () => {
     const r = await run(BELAY, [], { env, stdin });
     assert.equal(r.code, 0);
     assert.equal(r.stderr, "");
-    assert.match(JSON.parse(r.stdout).systemMessage, /^jev-belay would have blocked this turn: /);
+    assert.match(JSON.parse(r.stdout).systemMessage, /^jev-belay would have blocked this turn: reports completion/);
     const bad = await run(BELAY, [], { env, stdin: "not json" });
     assert.deepEqual([bad.code, bad.stdout], [0, ""]);
   } finally {

@@ -766,7 +766,7 @@ export async function runHook({ env = process.env, stdin, fetchImpl = fetch } = 
   // Shadow spends the block against the caps too, so turning it off later changes the
   // verdict and nothing about how often a session can be interrupted.
   recordBlock(payload.session_id, key);
-  if (shadow) return { exit: 0, why: "shadow: would block", systemMessage: `jev-belay would have blocked this turn: ${reason}` };
+  if (shadow) return { exit: 0, why: "shadow: would block", systemMessage: `jev-belay would have blocked this turn: ${reason.replace(/^jev-belay: /, "")}` };
   return { exit: 2, why: "blocked", reason };
 }
 
