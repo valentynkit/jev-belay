@@ -1,0 +1,30 @@
+Building for debugging...
+[0/7] /private/tmp/belaycap/sw/.build/arm64-apple-macosx/debug/BelaycapPackageTests.derived/runner.swift
+[1/7] Write sources
+[4/7] Write swift-version--58304C5D6DBC2206.txt
+[6/9] Emitting module Belaycap
+[7/9] Compiling Belaycap Belaycap.swift
+[8/11] Emitting module BelaycapTests
+[9/11] Compiling BelaycapTests BelaycapTests.swift
+[10/13] Emitting module BelaycapPackageTests
+[11/13] Compiling BelaycapPackageTests runner.swift
+[11/13] Write Objects.LinkFileList
+[12/13] Linking BelaycapPackageTests
+Build complete! (9.20s)
+Test Suite 'All tests' started at 2026-09-20 11:48:27.196.
+Test Suite 'BelaycapPackageTests.xctest' started at 2026-09-20 11:48:27.197.
+Test Suite 'BelaycapTests' started at 2026-09-20 11:48:27.197.
+Test Case '-[BelaycapTests.BelaycapTests testAdds]' started.
+Test Case '-[BelaycapTests.BelaycapTests testAdds]' passed (0.001 seconds).
+Test Case '-[BelaycapTests.BelaycapTests testAddsNegative]' started.
+Test Case '-[BelaycapTests.BelaycapTests testAddsNegative]' passed (0.000 seconds).
+Test Suite 'BelaycapTests' passed at 2026-09-20 11:48:27.199.
+	 Executed 2 tests, with 0 failures (0 unexpected) in 0.001 (0.002) seconds
+Test Suite 'BelaycapPackageTests.xctest' passed at 2026-09-20 11:48:27.199.
+	 Executed 2 tests, with 0 failures (0 unexpected) in 0.001 (0.002) seconds
+Test Suite 'All tests' passed at 2026-09-20 11:48:27.199.
+	 Executed 2 tests, with 0 failures (0 unexpected) in 0.001 (0.003) seconds
+􀟈  Test run started.
+􀄵  Testing Library Version: 1902
+􀄵  Target Platform: arm64e-apple-macos14.0
+􁁛  Test run with 0 tests in 0 suites passed after 0.001 seconds.

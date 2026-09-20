@@ -85,7 +85,24 @@ export function redact(text, home = homedir()) {
 // Belt 1: does the command text name a test, build, or lint runner?
 // Verbatim from pi-warden src/done.ts:12.
 
-export const CHECK_COMMAND = /\b(?:(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:test|check|lint|typecheck|build|verify|ci)\b|(?:npx|pnpm|bunx)\s+(?:tsc|jest|vitest|mocha|eslint|biome|prettier\s+--check)\b|pytest|jest|vitest|mocha|tsc|eslint|biome\s+check|ruff|mypy|flake8|pylint|black\s+--check|cargo\s+(?:test|check|build|clippy)|go\s+(?:test|vet|build)|make\s+(?:test|check|lint|build)|mvn\s+(?:test|verify)|gradle\w*\s+(?:test|check|build)|dotnet\s+(?:test|build)|node\s+--test|deno\s+(?:test|check|lint)|rspec|rake\s+test|mix\s+test|phpunit|swift\s+(?:test|build)|xcodebuild\s+test|ctest|zig\s+(?:test|build))\b/;
+export const CHECK_COMMAND = /\b(?:(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:test|check|lint|typecheck|build|verify|ci)\b|(?:npx|pnpm|bunx)\s+(?:tsc|jest|vitest|mocha|eslint|biome|prettier\s+--check)\b|pytest|jest|vitest|mocha|tsc|eslint|biome\s+check|ruff|mypy|flake8|pylint|black\s+--check|cargo\s+(?:test|check|build|clippy|nextest)|go\s+(?:test|vet|build)|make\s+(?:test|check|lint|build)|mvn\s+(?:test|verify)|gradle\w*\s+(?:test|check|build)|dotnet\s+(?:test|build)|node\s+--test|deno\s+(?:test|check|lint)|rspec|rake\s+test|mix\s+test|phpunit|swift\s+(?:test|build)|xcodebuild\s+test|ctest|zig\s+(?:test|build))\b/;
+
+let extraPattern;
+
+/**
+ * The project's own check script, named by the CHECK option as a regex over the command.
+ * A broken regex is ignored rather than thrown: this is a hook, and it fails open.
+ */
+function extraCheck() {
+  if (extraPattern === undefined) {
+    const source = option(process.env, "CHECK", "JEV_BELAY_CHECK");
+    try { extraPattern = source ? new RegExp(source) : null; } catch { extraPattern = null; }
+  }
+  return extraPattern;
+}
+
+// Exported because the hook reads the option once per process and a test needs several.
+export function resetExtraCheck() { extraPattern = undefined; }
 
 /**
  * Belt 2: a runner launched from inside a script leaves no runner name in the command,
@@ -94,7 +111,8 @@ export const CHECK_COMMAND = /\b(?:(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:test|ch
  */
 export function checkSummary(output) {
   if (typeof output !== "string" || !output) return undefined;
-  const tail = output.slice(-6000);
+  // deno colours its summary even when stdout is a file, and every rule below is anchored.
+  const tail = output.slice(-6000).replace(/\u001b\[[0-9;]*m/g, "");
   const nodeTest = /[ℹi] (?:tests|pass|fail) \d+/.test(tail) && /[ℹi] fail (\d+)/.exec(tail);
   if (nodeTest) return Number(nodeTest[1]) > 0 ? "fail" : "pass";
   const jest = /^Tests:\s+(?:(\d+) failed, )?.*?\d+ total/m.exec(tail);
@@ -119,6 +137,34 @@ export function checkSummary(output) {
   const eslint = /^[✖x] \d+ problems? \((\d+) errors?/m.exec(tail);
   if (eslint) return Number(eslint[1]) > 0 ? "fail" : "pass";
   if (/\berror TS\d{4,}:/.test(tail)) return "fail";
+  const nextest = /^\s*Summary \[[^\]]*\] \d+ tests run: [^\n]*/m.exec(tail);
+  if (nextest) return /\d+ failed/.test(nextest[0]) ? "fail" : "pass";
+  const deno = /^(ok|FAILED) \| \d+ passed[^|\n]*\| \d+ failed/m.exec(tail);
+  if (deno) return deno[1] === "ok" ? "pass" : "fail";
+  // ruff, mypy and biome all count the same way, so one rule reads all three.
+  if (/^Found \d+ errors?\b/m.test(tail)) return "fail";
+  if (/^(?:All checks passed!|Success: no issues found)/m.test(tail)) return "pass";
+  // biome puts its count on the same line as the file total when there is one.
+  const biome = /^Checked \d+ files? in [^\n]*/m.exec(tail);
+  if (biome) return /\berrors?\b/.test(biome[0]) ? "fail" : "pass";
+  if (/^\s*\d+ passing \(/m.test(tail)) return /^\s*\d+ failing\b/m.test(tail) ? "fail" : "pass";
+  const rspec = /^\s*\d+ examples?, (\d+) failures?/m.exec(tail);
+  if (rspec) return Number(rspec[1]) > 0 ? "fail" : "pass";
+  const minitest = /^\s*\d+ runs?, \d+ assertions?, (\d+) failures?, (\d+) errors?/m.exec(tail);
+  if (minitest) return Number(minitest[1]) > 0 || Number(minitest[2]) > 0 ? "fail" : "pass";
+  if (/^FAILURES!/m.test(tail)) return "fail";
+  if (/^OK \(\d+ tests?/m.test(tail)) return "pass";
+  // swift prints a line per suite and one for the run, and any failing suite is a failure.
+  const swift = [...tail.matchAll(/^\s*Executed \d+ tests?, with (\d+) failures?/gm)];
+  if (swift.length) return swift.some((m) => Number(m[1]) > 0) ? "fail" : "pass";
+  const ctest = /^\d+% tests passed, (\d+) tests failed out of \d+/m.exec(tail);
+  if (ctest) return Number(ctest[1]) > 0 ? "fail" : "pass";
+  // playwright lists what passed under what failed, so the failing line has the last word.
+  const playwrightFail = /^\s+\d+ failed\b/m.test(tail);
+  if (playwrightFail || /^\s+\d+ passed \([\d.]+m?s\)\s*$/m.test(tail)) return playwrightFail ? "fail" : "pass";
+  // Last: a compile error under no runner summary is a failed check, not a quiet pass.
+  if (/^error(?:\[E\d+\])?: /m.test(tail)) return "fail";
+  if (/^\S+\.go:\d+:\d+: /m.test(tail)) return "fail";
   return undefined;
 }
 
@@ -137,7 +183,8 @@ export function classifyToolResult(tool, input = {}, failed = false, output = ""
   if (MUTATING_TOOLS.has(tool)) return "mutation";
   const command = typeof input.command === "string" ? input.command : "";
   const summary = checkSummary(output);
-  if (tool === "Bash" && CHECK_COMMAND.test(command)) return failed || summary === "fail" ? "check-fail" : "check-pass";
+  const named = CHECK_COMMAND.test(command) || extraCheck()?.test(command) === true;
+  if (tool === "Bash" && named) return failed || summary === "fail" ? "check-fail" : "check-pass";
   if (summary) return summary === "fail" || failed ? "check-fail" : "check-pass";
   return "unknown";
 }

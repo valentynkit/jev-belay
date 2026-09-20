@@ -1,0 +1,15 @@
+Test project /tmp/belaycap/cm/build
+    Start 1: adds
+1/2 Test #1: adds .............................   Passed    0.33 sec
+    Start 2: adds_zero
+2/2 Test #2: adds_zero ........................***Failed    0.00 sec
+
+50% tests passed, 1 tests failed out of 2
+
+Total Test time (real) =   0.34 sec
+
+The following tests FAILED:
+	  2 - adds_zero (Failed)
+Errors while running CTest
+Output from these tests are in: /tmp/belaycap/cm/build/Testing/Temporary/LastTest.log
+Use "--rerun-failed --output-on-failure" to re-run the failed cases verbosely.

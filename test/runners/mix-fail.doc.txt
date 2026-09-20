@@ -1,0 +1,11 @@
+....
+
+  1) test adds negative numbers (SumTest)
+     test/sum_test.exs:9
+     Assertion with == failed
+     code:  assert Sum.add(-1, 1) == 1
+     left:  0
+     right: 1
+
+Finished in 0.05 seconds (0.00s async, 0.05s sync)
+1 doctest, 5 tests, 1 failure

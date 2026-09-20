@@ -1,0 +1,19 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.14.6, pytest-9.0.3, pluggy-1.6.0
+rootdir: /private/tmp/belaycap/py
+collected 2 items
+
+test_fail.py .F                                                          [100%]
+
+=================================== FAILURES ===================================
+__________________________________ test_parse __________________________________
+
+    def test_parse():
+>       assert parse(" 12 ") == 13
+E       AssertionError: assert 12 == 13
+E        +  where 12 = parse(' 12 ')
+
+test_fail.py:10: AssertionError
+=========================== short test summary info ============================
+FAILED test_fail.py::test_parse - AssertionError: assert 12 == 13
+========================= 1 failed, 1 passed in 0.01s ==========================

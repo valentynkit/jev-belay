@@ -1,0 +1,12 @@
+Running 5 tests using 2 workers
+
+  1) [chromium] › example.spec.ts:8:5 › adds negative numbers ───────────────────
+
+    Error: expect(received).toBe(expected)
+
+    Expected: 1
+    Received: 0
+
+  1 failed
+    [chromium] › example.spec.ts:8:5 › adds negative numbers ────────────────────
+  4 passed (3.4s)

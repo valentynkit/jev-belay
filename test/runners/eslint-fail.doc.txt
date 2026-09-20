@@ -1,0 +1,6 @@
+/app/src/sum.js
+  3:1  error  'sum' is not defined  no-undef
+  4:7  error  'total' is not defined  no-undef
+  5:7  warning  unexpected console statement  no-console
+
+✖ 3 problems (2 errors, 1 warning)
