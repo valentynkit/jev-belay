@@ -2,13 +2,13 @@
 // same turn fails open when something goes wrong.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, chmodSync, mkdirSync, appendFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, chmodSync, mkdirSync, appendFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 // A throwaway HOME before belay.mjs is imported: the session guard writes under it.
 process.env.HOME = mkdtempSync(join(tmpdir(), "belay-home-"));
-const { decide, runHook } = await import("../belay.mjs");
+const { BELAY_HOME, decide, logDecision, runHook } = await import("../belay.mjs");
 const { CARGO_PASS, JEST_FAIL, transcript, transcriptFile } = await import("./fixtures.mjs");
 const { startFake, baseUrlOf, DEFAULT_FIXTURES } = await import("../tools/fake-jev.mjs");
 
@@ -208,6 +208,59 @@ test("a final message that lands after the Stop fires is what gets judged", asyn
   const result = await runHook({ env: { TYPESAFE_API_KEY: "k" }, stdin: payload({ transcript_path: path }), fetchImpl });
   assert.equal(sent.final_message, "Done. The retry is implemented and the tests pass.");
   assert.equal(result.exit, 2);
+});
+
+// --- options ---------------------------------------------------------------
+// A plugin user never sets a variable: Claude Code prompts for the value at enable time
+// and hands it to the hook as CLAUDE_PLUGIN_OPTION_<NAME>.
+
+const answersWith = (capture) => async (url, init) => {
+  capture?.(init);
+  return new Response(JSON.stringify({ model: "fake", answers: DEFAULT_FIXTURES, usage: {} }), { status: 200, headers: { "content-type": "application/json" } });
+};
+
+test("the plugin's own key is a key, and it wins over the plain variable", async () => {
+  let auth;
+  const fetchImpl = answersWith((init) => { auth = init.headers.Authorization; });
+  const stdin = payload({ transcript_path: transcriptFile(BLOCKING) });
+  const plugin = await runHook({ env: { CLAUDE_PLUGIN_OPTION_TYPESAFE_API_KEY: "from-plugin" }, stdin, fetchImpl });
+  assert.equal(plugin.exit, 2);
+  assert.equal(auth, "Bearer from-plugin");
+
+  const both = await runHook({
+    env: { CLAUDE_PLUGIN_OPTION_TYPESAFE_API_KEY: "from-plugin", TYPESAFE_API_KEY: "from-env" },
+    stdin: payload({ transcript_path: transcriptFile(BLOCKING) }),
+    fetchImpl,
+  });
+  assert.equal(both.exit, 2);
+  assert.equal(auth, "Bearer from-plugin");
+});
+
+test("fails open: the plugin option is empty too", async () => {
+  const result = await runHook({ env: { CLAUDE_PLUGIN_OPTION_TYPESAFE_API_KEY: "" }, stdin: payload({ transcript_path: transcriptFile(BLOCKING) }) });
+  assert.equal(result.exit, 0);
+  assert.equal(result.why, "no key");
+});
+
+test("a boolean option is on as \"1\" and as \"true\", and off as anything else", () => {
+  const written = () => readFileSync(join(BELAY_HOME, "decisions.jsonl"), "utf8");
+  logDecision({ marker: "one" }, { JEV_BELAY_LOG: "1" });
+  logDecision({ marker: "true" }, { JEV_BELAY_LOG: "true" });
+  logDecision({ marker: "plugin" }, { CLAUDE_PLUGIN_OPTION_LOG: "true" });
+  logDecision({ marker: "off" }, { JEV_BELAY_LOG: "0" });
+  logDecision({ marker: "absent" }, {});
+  const log = written();
+  for (const marker of ["one", "true", "plugin"]) assert.match(log, new RegExp(`"${marker}"`));
+  for (const marker of ["off", "absent"]) assert.doesNotMatch(log, new RegExp(`"${marker}"`));
+});
+
+test("the threshold option decides, plugin value first", async () => {
+  const timid = { ...DEFAULT_FIXTURES, claims_done: { type: "noul", noul: 0.68 } };
+  const stdin = () => payload({ transcript_path: transcriptFile(BLOCKING) });
+  await withFake(timid, async (env) => {
+    assert.equal((await runHook({ env: { ...env, JEV_BELAY_THRESHOLD: "0.9" }, stdin: stdin() })).exit, 0);
+    assert.equal((await runHook({ env: { ...env, CLAUDE_PLUGIN_OPTION_THRESHOLD: "0.6", JEV_BELAY_THRESHOLD: "0.9" }, stdin: stdin() })).exit, 2);
+  });
 });
 
 test("a turn that edited and truly said nothing claims nothing, so it ends", async () => {

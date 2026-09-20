@@ -45,6 +45,21 @@ export function isEntryPoint(moduleUrl) {
   try { return moduleUrl === pathToFileURL(realpathSync(argv1)).href; } catch { return false; }
 }
 
+/**
+ * One setting, two spellings. Claude Code hands a plugin's userConfig values to the hook
+ * as CLAUDE_PLUGIN_OPTION_<NAME>; a manual install sets the plain variable instead, so the
+ * plugin value wins and the variable names after it are tried in order.
+ */
+export function option(env, name, ...vars) {
+  for (const key of [`CLAUDE_PLUGIN_OPTION_${name}`, ...(vars.length ? vars : [name])]) {
+    if (env?.[key]) return env[key];
+  }
+  return undefined;
+}
+
+/** A plugin boolean arrives as "true", a hand-set variable usually as "1". */
+export const isOn = (value) => value === "1" || String(value).toLowerCase() === "true";
+
 // ---------------------------------------------------------------------------
 // Redaction. Broad on purpose: this runs on everything that leaves the machine.
 // Shapes and assignment forms follow pi-warden src/redact.ts:6-21.
@@ -435,7 +450,7 @@ export async function ask(state, questions, { env = process.env, fetchImpl = fet
 
 async function askWithin(budget, state, questions, { env, fetchImpl }) {
   const base = env.JEV_BASE_URL || "https://api.typesafe.ai";
-  const key = env.TYPESAFE_API_KEY || env.JEV_API_KEY;
+  const key = option(env, "TYPESAFE_API_KEY", "TYPESAFE_API_KEY", "JEV_API_KEY");
   const headers = { "Content-Type": "application/json" };
   if (key) headers.Authorization = `Bearer ${key}`;
   const body = JSON.stringify({ model: env.JEV_MODEL || MODEL, state, questions });
@@ -583,7 +598,7 @@ export function guardAllows(state, key, now = Date.now()) {
 const LOG_CAP_BYTES = 5 * 1024 * 1024;
 
 export function logDecision(record, env = process.env) {
-  if (env.JEV_BELAY_LOG !== "1") return;
+  if (!isOn(option(env, "LOG", "JEV_BELAY_LOG"))) return;
   try {
     mkdirSync(BELAY_HOME, { recursive: true });
     const path = join(BELAY_HOME, "decisions.jsonl");
@@ -622,7 +637,7 @@ export async function runHook({ env = process.env, stdin, fetchImpl = fetch } = 
   try { payload = JSON.parse(stdin); } catch { return { exit: 0, why: "unparseable payload" }; }
   if (!payload || typeof payload !== "object") return { exit: 0, why: "empty payload" };
   if (payload.stop_hook_active) return { exit: 0, why: "stop hook already active" };
-  if (!env.TYPESAFE_API_KEY && !env.JEV_API_KEY && !env.JEV_BASE_URL) return { exit: 0, why: "no key" };
+  if (!option(env, "TYPESAFE_API_KEY", "TYPESAFE_API_KEY", "JEV_API_KEY") && !env.JEV_BASE_URL) return { exit: 0, why: "no key" };
 
   let evidence;
   try { evidence = readEvidence(payload.transcript_path); } catch { return { exit: 0, why: "no readable transcript" }; }
@@ -666,7 +681,7 @@ export async function runHook({ env = process.env, stdin, fetchImpl = fetch } = 
   } catch (err) {
     return { exit: 0, why: `jev unreachable: ${String(err.message).slice(0, 120)}` };
   }
-  const verdict = decide(answer.answers, evidence, { threshold: Number(env.JEV_BELAY_THRESHOLD || DEFAULT_THRESHOLD) });
+  const verdict = decide(answer.answers, evidence, { threshold: Number(option(env, "THRESHOLD", "JEV_BELAY_THRESHOLD") || DEFAULT_THRESHOLD) });
   const reason = verdict.block ? nudge(verdict, evidence) : "";
 
   logDecision({
