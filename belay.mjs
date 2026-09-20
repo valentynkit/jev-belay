@@ -321,6 +321,10 @@ function readTail(path) {
 // A delegated turn writes its own transcript beside the parent's, one file per agent, and
 // all the parent keeps of the work is a Task result. In sessions that delegate, a fifth of
 // the edited turns were edited by nobody the parent can see.
+// 4 KB is plenty: in the files 2.1.263 writes the key order is parentUuid, isSidechain,
+// promptId, agentId, type, message, so the id sits before any long text.
+// ponytail: every agent file in the session gets its head read on every stop, one open
+// and one 4 KB read each. Filter on mtime if a session ever delegates hundreds of times.
 const AGENT_HEAD_BYTES = 4096;
 
 function readHead(path, bytes = AGENT_HEAD_BYTES) {
@@ -356,7 +360,10 @@ export function subagentLines(transcriptPath, promptId) {
  */
 function foldSubagents(lines, extra) {
   if (!extra?.length) return lines;
-  const at = (line) => line.timestamp || "\uffff"; // an undated line sorts after the dated ones
+  // Every user and assistant line the host writes carries an ISO timestamp, so the
+  // sentinels only decide what happens to a line something else wrote: an undated agent
+  // line goes last, an undated parent line flushes nothing ahead of itself.
+  const at = (line) => line.timestamp || "\uffff";
   const sorted = [...extra].sort((a, b) => (at(a) < at(b) ? -1 : at(a) > at(b) ? 1 : 0));
   const merged = [];
   let i = 0;
@@ -541,7 +548,7 @@ function sleep(ms, signal) {
 // ---------------------------------------------------------------------------
 // The decision. Reads the evidence as well as the answers.
 
-export const DEFAULT_THRESHOLD = 0.65;
+export const DEFAULT_THRESHOLD = 0.7;
 const APPLIES_THRESHOLD = 0.5;
 // A four-way choice picked at 0.26 is a coin toss, and the `blocked` pick vetoes everything
 // else. Only a pick that beat the field by some margin gets that power.
@@ -662,6 +669,7 @@ export const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // What the host appends when it strips an oversized message out of the payload. The tail is
 // where the completion claim lives, so a cut one is worth less than the transcript's copy.
+// The marker as spelled in the 2.1.263 binary: an in-string ellipsis and the cut count.
 const TRUNCATED_MESSAGE = /… \[\+\d+ chars\]$/;
 
 function readStdin() {
@@ -733,7 +741,10 @@ export async function runHook({ env = process.env, stdin, fetchImpl = fetch } = 
   } catch (err) {
     return { exit: 0, why: `jev unreachable: ${String(err.message).slice(0, 120)}` };
   }
-  const verdict = decide(answer.answers, evidence, { threshold: Number(option(env, "THRESHOLD", "JEV_BELAY_THRESHOLD") || DEFAULT_THRESHOLD) });
+  // A threshold that is not a number would make every comparison false and the hook a
+  // silent no-op, and the plugin's config field is a text box. 0 is a number and is kept.
+  const chosen = Number(option(env, "THRESHOLD", "JEV_BELAY_THRESHOLD"));
+  const verdict = decide(answer.answers, evidence, { threshold: Number.isFinite(chosen) ? chosen : DEFAULT_THRESHOLD });
   const reason = verdict.block ? nudge(verdict, evidence) : "";
   const shadow = isOn(option(env, "SHADOW", "JEV_BELAY_SHADOW"));
 

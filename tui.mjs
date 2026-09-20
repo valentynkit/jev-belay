@@ -77,7 +77,8 @@ export function decisionParts(d, width = COLS()) {
   // Extra width past 80 goes to the task and the reason. A bar longer than this stops
   // reading as a quantity and starts reading as a wall.
   const barWidth = Math.max(12, Math.min(46, width - 34));
-  const checks = d.evidence?.checks || [];
+  // A replayed file is whatever the user points at, so every field is optional here.
+  const checks = Array.isArray(d.evidence?.checks) ? d.evidence.checks.filter((k) => k && typeof k === "object") : [];
   const passedFresh = checks.some((k) => k.passed);
   const head = [dim("─".repeat(width)), `${dim("task ")} ${oneLine(d.task, width - 7)}`];
   // A stop the gate let through is logged before the closing message reaches the
@@ -87,12 +88,12 @@ export function decisionParts(d, width = COLS()) {
   if (d.final_message) head.push(`${dim("said ")} ${oneLine(d.final_message, width - 7)}`);
   head.push(`${dim("ran  ")} ${ranLine(checks, d.evidence?.mutations ?? 0)}`, "");
   const bars = Object.entries(d.answers || {}).map(([name, answer]) => {
-    const p = answer.noul ?? answer.confidence ?? 0;
+    const p = Number(answer?.noul ?? answer?.confidence) || 0;
     const base = LABEL[name] || name;
     return {
-      label: answer.choice ? `${base}: ${answer.choice}` : base,
+      label: answer?.choice ? `${base}: ${answer.choice}` : base,
       p,
-      style: answer.choice ? (answer.choice === "blocked" ? "green" : "red") : paint(name, p, passedFresh),
+      style: answer?.choice ? (answer.choice === "blocked" ? "green" : "red") : paint(name, p, passedFresh),
     };
   });
   const cost = costOf(d);
@@ -215,7 +216,7 @@ function readRange(path, position, length) {
 function readLog() {
   const out = [];
   for (const path of [join(BELAY_HOME, "decisions.jsonl.1"), join(BELAY_HOME, "decisions.jsonl")]) {
-    try { out.push(...parseJsonl(readFileSync(path, "utf8"))); } catch { /* one half, or neither, is normal */ }
+    try { out.push(...parseJsonl(readFileSync(path, "utf8")).filter((r) => r && typeof r === "object")); } catch { /* one half, or neither, is normal */ }
   }
   return out;
 }
@@ -344,24 +345,37 @@ function claudeCheck() {
   } catch {
     return ["skip", "claude code version", "claude is not on PATH here, so the version could not be read"];
   }
-  const version = /\d+\.\d+\.\d+/.exec(printed)?.[0];
+  // A wrapper may print its own lines first, so read the version off the line that names
+  // Claude Code, and only fall back to the last version-shaped token.
+  const version = /(\d+\.\d+\.\d+)\s*\(Claude Code\)/.exec(printed)?.[1] ?? printed.match(/\d+\.\d+\.\d+/g)?.at(-1);
   if (!version) return ["skip", "claude code version", "claude --version printed no version"];
   return versionAtLeast(version, MIN_CLAUDE)
     ? ["ok", `claude code ${version}`]
     : ["FAIL", `claude code ${version}`, `run claude update, the plugin options and skills need ${MIN_CLAUDE} or newer`];
 }
 
+// Every settings file Claude Code merges, user and project, since a hook or an enabled
+// plugin in any one of them is a working install.
+const SETTINGS_FILES = () => [
+  join(homedir(), ".claude", "settings.json"),
+  join(homedir(), ".claude", "settings.local.json"),
+  join(process.cwd(), ".claude", "settings.json"),
+  join(process.cwd(), ".claude", "settings.local.json"),
+];
+
 function hookCheck() {
-  const path = join(homedir(), ".claude", "settings.json");
-  let settings;
-  try { settings = JSON.parse(readFileSync(path, "utf8")); } catch {
-    return ["skip", "hook registered", "~/.claude/settings.json is missing or unreadable"];
+  let read = 0;
+  for (const path of SETTINGS_FILES()) {
+    let settings;
+    try { settings = JSON.parse(readFileSync(path, "utf8")); read++; } catch { continue; }
+    if (!settings || typeof settings !== "object") continue;
+    const short = path.replace(homedir(), "~").replace(process.cwd(), ".");
+    if (Object.keys(settings.enabledPlugins || {}).some((name) => name.startsWith("jev-belay@"))) return ["ok", `hook registered (plugin enabled in ${short})`];
+    const stop = (Array.isArray(settings.hooks?.Stop) ? settings.hooks.Stop : [])
+      .some((entry) => (Array.isArray(entry?.hooks) ? entry.hooks : []).some((h) => String(h?.command || "").includes("belay.mjs")));
+    if (stop) return ["ok", `hook registered (Stop hook in ${short})`];
   }
-  const plugin = Object.keys(settings.enabledPlugins || {}).some((name) => name.startsWith("jev-belay@"));
-  const stop = (Array.isArray(settings.hooks?.Stop) ? settings.hooks.Stop : [])
-    .some((entry) => (Array.isArray(entry?.hooks) ? entry.hooks : []).some((h) => String(h?.command || "").includes("belay.mjs")));
-  if (plugin) return ["ok", "hook registered (plugin enabled)"];
-  if (stop) return ["ok", "hook registered (Stop hook in settings.json)"];
+  if (!read) return ["skip", "hook registered", "no settings file could be read"];
   return ["FAIL", "hook registered", "enable the plugin with /plugin, or add a Stop hook running belay.mjs to ~/.claude/settings.json"];
 }
 

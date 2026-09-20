@@ -18,7 +18,7 @@
       "type": "number",
       "title": "claims_done threshold",
       "description": "How sure Jev has to be that the turn reported the work as done before a stop is blocked.",
-      "default": 0.65
+      "default": 0.7
     },
     "log": {
       "type": "boolean",

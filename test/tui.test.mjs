@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -130,7 +130,7 @@ test("doctor passes on a wired up install and never prints the key", async () =>
   assert.match(stdout, /skip {2}claude code version/);
   assert.match(stdout, /skip {2}hook registered/);
   assert.match(stdout, /ok {4}transcripts readable/);
-  assert.match(stdout, /ok {4}options: threshold 0\.65, log off, shadow off, model /);
+  assert.match(stdout, /ok {4}options: threshold 0\.7, log off, shadow off, model /);
   assert.match(stdout, /ok {4}round trip: a claimed done with nothing run was blocked/);
 });
 
@@ -153,7 +153,34 @@ test("doctor sees the hook in settings.json and the plugin in enabledPlugins", a
   const viaHook = settings({ hooks: { Stop: [{ hooks: [{ type: "command", command: "node ~/src/belay.mjs" }] }] } });
   assert.match((await run(BELAY, ["doctor"], { env: { ...env, HOME: viaHook } })).stdout, /ok {4}hook registered \(Stop hook/);
   const viaPlugin = settings({ enabledPlugins: { "jev-belay@claude-plugins-official": true } });
-  assert.match((await run(BELAY, ["doctor"], { env: { ...env, HOME: viaPlugin } })).stdout, /ok {4}hook registered \(plugin enabled\)/);
+  assert.match((await run(BELAY, ["doctor"], { env: { ...env, HOME: viaPlugin } })).stdout, /ok {4}hook registered \(plugin enabled in ~\/.claude\/settings.json\)/);
   const broken = settings("{ not json at all");
   assert.match((await run(BELAY, ["doctor"], { env: { ...env, HOME: broken } })).stdout, /skip {2}hook registered/);
+});
+
+// Found by review. Each one was a healthy install reported broken, or a reachable crash.
+test("doctor finds the hook in settings.local.json too", async () => {
+  const home = tempHome();
+  writeFileSync(join(home, ".claude", "settings.json"), "{}");
+  writeFileSync(join(home, ".claude", "settings.local.json"), JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: "node ~/src/belay.mjs" }] }] } }));
+  const env = { ...CLEAN, TYPESAFE_API_KEY: "x", PATH: "/nonexistent", HOME: home };
+  assert.match((await run(BELAY, ["doctor"], { env })).stdout, /ok {4}hook registered \(Stop hook in ~\/.claude\/settings.local.json\)/);
+});
+
+test("doctor reads the version off the Claude Code line, not a wrapper's preamble", async () => {
+  const bin = mkdtempSync(join(tmpdir(), "belay-bin-"));
+  writeFileSync(join(bin, "claude"), "#!/bin/sh\necho 'warming cache v9.9.9...'\necho '2.1.263 (Claude Code)'\n", { mode: 0o755 });
+  const env = { ...CLEAN, TYPESAFE_API_KEY: "x", PATH: bin, HOME: tempHome() };
+  assert.match((await run(BELAY, ["doctor"], { env })).stdout, /ok {4}claude code 2\.1\.263/);
+});
+
+test("a null line and a record with junk answers do not crash stats or last", async () => {
+  const home = tempHome([decision("allowed", daysAgo(0), { answers: { claims_done: null }, evidence: { checks: "bad" } })]);
+  appendFileSync(join(home, ".claude", "belay", "decisions.jsonl"), "null\n");
+  const env = { ...CLEAN, HOME: home };
+  const stats = await run(BELAY, ["stats"], { env });
+  assert.equal(stats.code, 0, stats.stderr);
+  const last = await run(BELAY, ["last"], { env });
+  assert.equal(last.code, 0, last.stderr);
+  assert.match(last.stdout, /ALLOWED/);
 });
