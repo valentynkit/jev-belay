@@ -14,7 +14,7 @@ const samples = parseJsonl(readFileSync(new URL("../demo/sample-decisions.jsonl"
 // both are what the layout has to survive.
 for (const width of [60, 80, 120]) {
   test(`every sample decision fits a ${width} column pane`, () => {
-    assert.equal(samples.length, 5);
+    assert.equal(samples.length, 6);
     for (const d of samples) {
       for (const line of renderDecision(d, width).split("\n")) {
         assert.ok([...line].length <= width, `${[...line].length} columns at ${width}: ${line}`);
@@ -33,6 +33,16 @@ test("the verdict, the four bars, and the cost are all on screen", () => {
   }
   assert.match(renderDecision(samples[2], 80), /ALLOWED/);
   assert.match(renderDecision(samples[1], 80), /PASSED/);
+});
+
+// Shadow is a block that did not land, so it carries a block's reason and a block's footer
+// under its own band.
+test("a shadowed stop shows the band, the reason, and the cost", () => {
+  const shadow = renderDecision(samples[5], 80);
+  assert.match(shadow, /SHADOW/);
+  assert.equal(shadow.includes("BLOCKED"), false);
+  assert.ok(shadow.includes("Run the project tests on what you changed."));
+  assert.match(shadow, /98 ms {3}\$0\.0000\d+/);
 });
 
 test("the claim and what actually ran are adjacent lines", () => {
