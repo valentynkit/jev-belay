@@ -319,7 +319,7 @@ test("shadow reports the block it would have made instead of making it", async (
     const shadowEnv = { ...env, JEV_BELAY_SHADOW: "true" };
     const first = await runHook({ env: shadowEnv, stdin });
     assert.equal(first.exit, 0);
-    assert.match(first.systemMessage, /would have blocked this turn: jev-belay: reports completion/);
+    assert.match(first.systemMessage, /would have blocked this turn: reports completion/);
     // The caps see a shadow block, so turning shadow off later changes the verdict and
     // nothing about how often a session can be interrupted.
     const second = await runHook({ env: shadowEnv, stdin });
