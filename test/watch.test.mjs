@@ -5,7 +5,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 process.env.NO_COLOR = "1";
-const { renderDecision, decisionParts, barLine, parseJsonl } = await import("../belay.mjs");
+const { renderDecision, decisionParts, barLine } = await import("../tui.mjs");
+const { parseJsonl } = await import("../belay.mjs");
 
 const samples = parseJsonl(readFileSync(new URL("../demo/sample-decisions.jsonl", import.meta.url), "utf8"));
 
