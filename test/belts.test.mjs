@@ -49,3 +49,28 @@ test("a compile error is a failed check, whoever ran the compiler", () => {
   // Belt 2 alone, exactly as it answers for a runner launched inside a script.
   assert.equal(classifyToolResult("Bash", { command: "./build-all" }, false, output("cargo-check-fail.txt")), "check-fail");
 });
+
+// Found by review: each of these read as a clean pass, or quoted a non-check as failed.
+test("a CHECK option that matches everything is ignored, like a broken one", () => {
+  withCheck("JEV_BELAY_CHECK", ".*", () => {
+    assert.equal(classifyToolResult("Bash", { command: "ls" }, false, ""), "unknown");
+    assert.equal(classifyToolResult("Bash", { command: "echo hi" }, false, ""), "unknown");
+  });
+});
+
+test("an rspec error outside the examples is a failure, whatever the failure count says", () => {
+  const out = "Finished in 0.01s\n0 examples, 0 failures, 1 error occurred outside of examples\n";
+  assert.equal(classifyToolResult("Bash", { command: "bundle exec rspec" }, false, out), "check-fail");
+  assert.equal(classifyToolResult("Bash", { command: "bundle exec rspec" }, false, "5 examples, 0 failures\n"), "check-pass");
+});
+
+test("a bare error: line from git is not a failed check", () => {
+  assert.equal(classifyToolResult("Bash", { command: "git push" }, false, "error: failed to push some refs to 'origin'\n"), "unknown");
+  assert.equal(classifyToolResult("Bash", { command: "cargo check" }, false, "error: could not compile `x` due to 1 previous error\n"), "check-fail");
+});
+
+test("a reporter that erases its line before the summary still gets read", () => {
+  const esc = String.fromCharCode(27);
+  const erased = `running...\n${esc}[2K${esc}[1G  5 passing (12ms)\n`;
+  assert.equal(classifyToolResult("Bash", { command: "./run.sh" }, false, erased), "check-pass");
+});
