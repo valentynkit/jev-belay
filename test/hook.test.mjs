@@ -2,7 +2,7 @@
 // same turn fails open when something goes wrong.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, chmodSync, mkdirSync, appendFileSync, readFileSync } from "node:fs";
+import { mkdtempSync, chmodSync, mkdirSync, appendFileSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -167,27 +167,37 @@ test("fails open: garbage answers", async () => {
   assert.equal(result.exit, 0);
 });
 
+// BELAY_HOME is fixed when the module loads, so the directory that has to be unwritable is
+// that one. An earlier version of this test locked a different temp dir and proved nothing.
 test("an unwritable session directory still blocks and still exits cleanly", async () => {
-  const home = mkdtempSync(join(tmpdir(), "belay-ro-"));
-  mkdirSync(join(home, ".claude"), { recursive: true });
-  chmodSync(join(home, ".claude"), 0o500);
+  const sessions = join(BELAY_HOME, "sessions");
+  mkdirSync(sessions, { recursive: true });
+  chmodSync(sessions, 0o500);
   const stdin = payload({ transcript_path: transcriptFile(BLOCKING) });
-  const previous = process.env.HOME;
   try {
     const result = await withFake(DEFAULT_FIXTURES, (env) => runHook({ env, stdin }));
     assert.equal(result.exit, 2);
   } finally {
-    process.env.HOME = previous;
-    chmodSync(join(home, ".claude"), 0o700);
+    chmodSync(sessions, 0o700);
   }
 });
 
-test("the decision log stays off unless JEV_BELAY_LOG=1", async () => {
-  const home = mkdtempSync(join(tmpdir(), "belay-log-"));
-  writeFileSync(join(home, "marker"), "");
+test("the decision log is written only when the log option is on", async () => {
+  const log = join(BELAY_HOME, "decisions.jsonl");
   const stdin = payload({ transcript_path: transcriptFile(BLOCKING) });
-  const result = await withFake(DEFAULT_FIXTURES, (env) => runHook({ env: { ...env, JEV_BELAY_LOG: "0" }, stdin }));
+  await withFake(DEFAULT_FIXTURES, (env) => runHook({ env: { ...env, JEV_BELAY_LOG: "0" }, stdin }));
+  assert.equal(existsSync(log), false);
+  await withFake(DEFAULT_FIXTURES, (env) => runHook({ env: { ...env, JEV_BELAY_LOG: "1" }, stdin: payload({ transcript_path: transcriptFile(BLOCKING) }) }));
+  assert.match(readFileSync(log, "utf8"), /"verdict":"blocked"/);
+});
+
+test("a threshold that is not a number falls back to the default instead of never blocking", async () => {
+  const stdin = payload({ transcript_path: transcriptFile(BLOCKING) });
+  const result = await withFake(DEFAULT_FIXTURES, (env) => runHook({ env: { ...env, JEV_BELAY_THRESHOLD: "high" }, stdin }));
   assert.equal(result.exit, 2);
+  // The fail-open sibling: a threshold above every answer still lets the turn end.
+  const strict = await withFake(DEFAULT_FIXTURES, (env) => runHook({ env: { ...env, JEV_BELAY_THRESHOLD: "1" }, stdin: payload({ transcript_path: transcriptFile(BLOCKING) }) }));
+  assert.equal(strict.exit, 0);
 });
 
 // Seen for real on 2026-09-19 while recording the demo: Claude Code fired Stop with the
@@ -272,10 +282,10 @@ test("the closing message on the payload is judged without waiting for the trans
     transcript_path: transcriptFile(BLOCKING.slice(0, -1)),
     last_assistant_message: "Done. The retry is implemented and the tests pass.",
   });
-  const started = Date.now();
   const result = await runHook({ env: { TYPESAFE_API_KEY: "k" }, stdin, fetchImpl });
+  // The transcript never carries this sentence, so the only way it reaches the wire is off
+  // the payload. That is the proof; a stopwatch here only flakes on a loaded runner.
   assert.equal(sent.final_message, "Done. The retry is implemented and the tests pass.");
-  assert.ok(Date.now() - started < 250, "the payload carried it, so there is nothing to wait for");
   assert.equal(result.exit, 2);
 });
 
