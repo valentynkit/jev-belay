@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { checkSummary } from "../belay.mjs";
+import { checkSummary, evidenceFromTurn, freshChecks, needsDoneCheck } from "../belay.mjs";
+import { transcript } from "./fixtures.mjs";
 
 const dir = join(dirname(fileURLToPath(import.meta.url)), "runners");
 const fixtures = readdirSync(dir).filter((name) => name.endsWith(".txt")).sort();
@@ -16,6 +17,21 @@ test("belt 2 decides every runner in the zoo", () => {
     assert.equal(checkSummary(read(name)), expected, name);
   }
 });
+
+for (const [name, passed] of [["pytest-quiet-pass.txt", true], ["pytest-quiet-fail.txt", false], ["pytest-quiet-error-fail.txt", false]]) {
+  test(`quiet pytest verification follows the summary: ${name}`, () => {
+    // The host does not flag runner failures, including errors during fixture setup.
+    for (const command of ["python -m pytest -q", "./scripts/check.sh"]) {
+      const evidence = evidenceFromTurn(transcript([
+        { tool: "Edit", input: { file_path: "/tmp/parser.py" } },
+        { tool: "Bash", input: { command }, stdout: read(name) },
+        { text: "Done, the parser is fixed." },
+      ]));
+      assert.deepEqual(freshChecks(evidence), [{ call: command, passed }]);
+      assert.equal(needsDoneCheck(evidence), !passed);
+    }
+  });
+}
 
 // A clean compile prints nothing a summary rule could read, so only the failing shape is
 // captured; belt 1 reads the command for the passing one.
@@ -40,4 +56,5 @@ test("a traceback that says error does not reach the compiler rule", () => {
 test("prose about a runner is still not a summary", () => {
   assert.equal(checkSummary("I will run cargo nextest next, then report back."), undefined);
   assert.equal(checkSummary("5 examples of the pattern are in the docs"), undefined);
+  assert.equal(checkSummary("I saw 1 failed request in 0.04s"), undefined);
 });

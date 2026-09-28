@@ -122,8 +122,8 @@ export function checkSummary(output) {
   if (nodeTest) return Number(nodeTest[1]) > 0 ? "fail" : "pass";
   const jest = /^Tests:\s+(?:(\d+) failed, )?.*?\d+ total/m.exec(tail);
   if (jest) return jest[1] && Number(jest[1]) > 0 ? "fail" : "pass";
-  // A long run appends the wall clock after the seconds, so the tail is not anchored.
-  const pytest = /^=+ .*?(?:(\d+) failed|(\d+) error).*?in [\d.]+s/m.exec(tail) ?? /^=+ (\d+) passed.*? in [\d.]+s/m.exec(tail);
+  // Quiet mode omits the equals signs; long runs append a wall clock after the seconds.
+  const pytest = /^(?:=+ )?(?:\d+ \w+, )*\d+ (?:failed|errors?|passed)(?:, \d+ \w+)* in [\d.]+s/m.exec(tail);
   if (pytest) return /\d+ (?:failed|error)/.test(pytest[0]) ? "fail" : "pass";
   const cargoOrGo = /^test result: (ok|FAILED)\./m.exec(tail) ?? /^(ok|FAIL)\s+\S+\s+[\d.]+s$/m.exec(tail);
   if (cargoOrGo) return cargoOrGo[1] === "ok" ? "pass" : "fail";

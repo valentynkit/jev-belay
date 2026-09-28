@@ -1,0 +1,13 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+__________________________________ test_parse __________________________________
+
+    def test_parse():
+>       assert int(" 12 ") == 13
+E       AssertionError: assert 12 == 13
+E        +  where 12 = int(' 12 ')
+
+test_parse.py:2: AssertionError
+=========================== short test summary info ============================
+FAILED test_parse.py::test_parse - AssertionError: assert 12 == 13
+1 failed in 0.03s

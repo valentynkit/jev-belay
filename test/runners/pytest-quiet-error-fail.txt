@@ -1,0 +1,13 @@
+E                                                                        [100%]
+==================================== ERRORS ====================================
+_________________________ ERROR at setup of test_parse _________________________
+
+    @pytest.fixture
+    def number():
+>       raise ValueError("fixture setup failed")
+E       ValueError: fixture setup failed
+
+test_parse.py:5: ValueError
+=========================== short test summary info ============================
+ERROR test_parse.py::test_parse - ValueError: fixture setup failed
+1 error in 0.07s

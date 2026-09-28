@@ -12,3 +12,6 @@ Captured with `<cmd> > <runner>-<verdict>.txt 2>&1`, once green and once red, fo
 `node --test`, `pytest`, `ruff check`, `bun test`, `deno test`, `cargo test`,
 `cargo nextest run`, `cargo check`, `cargo clippy -- -D warnings`, `go test ./...`,
 `go build ./...`, `go vet ./...`, `swift test`, `ctest`.
+
+The `pytest-quiet-*` samples were captured with `python -m pytest -q --color=no`
+on pytest 9.0.2, including an assertion failure and an error during fixture setup.
